@@ -4,10 +4,10 @@
  * Gemini API key is stored in expo-secure-store (encrypted) – never in MMKV.
  */
 import * as SecureStore from "expo-secure-store";
-import { MMKV } from "react-native-mmkv";
+import { createMMKV } from "react-native-mmkv";
 import type { AppSettings, UserProfile } from "../../types/models";
 
-const storage = new MMKV({ id: "notegenius-settings" });
+const storage = createMMKV({ id: "notegenius-settings" });
 
 const KEYS = {
   USER_PROFILE: "user.profile",
