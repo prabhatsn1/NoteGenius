@@ -12,7 +12,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import "react-native-reanimated";
 
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useColorScheme } from "../hooks/use-color-scheme";
 import { getDatabase } from "../src/data/database";
 import SetupScreen from "../src/screens/SetupScreen";
 import { useUserStore } from "../src/store/useUserStore";
