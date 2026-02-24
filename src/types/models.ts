@@ -27,6 +27,12 @@ export interface Note {
   durationMs?: number;
   /** BCP-47 language code for STT, e.g. 'en-US', 'hi-IN' */
   languageCode?: string;
+  /** User-defined tags for filtering */
+  tags?: string[];
+  /** Pinned notes appear first in the list */
+  isPinned?: boolean;
+  /** Archived notes are hidden from the main list */
+  isArchived?: boolean;
 }
 
 /** Meeting-style summary generated from a note's segments. */
