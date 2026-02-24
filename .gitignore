@@ -3,3 +3,7 @@ ios
 android
 .expo
 .env
+
+
+expo-env.d.ts
+# @end expo-cli
