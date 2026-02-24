@@ -14,7 +14,7 @@ import type {
   IAiProvider,
 } from "../AiProvider";
 
-const MODEL_NAME = "gemini-2.0-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
 const GEMINI_BASE_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -46,8 +46,9 @@ interface GeminiRequestBody {
 async function callGemini(
   apiKey: string,
   body: GeminiRequestBody,
+  modelName: string = DEFAULT_GEMINI_MODEL,
 ): Promise<string> {
-  const url = `${GEMINI_BASE_URL}/${MODEL_NAME}:generateContent?key=${apiKey}`;
+  const url = `${GEMINI_BASE_URL}/${modelName}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
     method: "POST",
@@ -102,7 +103,10 @@ function parseJSONSafe<T>(raw: string, fallback: T): T {
 
 // ─── GeminiProvider factory ─────────────────────────────────────────────────
 
-export function createGeminiProvider(apiKey: string): IAiProvider {
+export function createGeminiProvider(
+  apiKey: string,
+  modelName: string = DEFAULT_GEMINI_MODEL,
+): IAiProvider {
   return {
     label: "Gemini (cloud)",
 
@@ -114,40 +118,48 @@ export function createGeminiProvider(apiKey: string): IAiProvider {
       const chunks = chunkText(transcript, 12_000);
 
       if (chunks.length === 1) {
-        const text = await callGemini(apiKey, {
-          system_instruction: { parts: [{ text: SUMMARY_SYSTEM }] },
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `User name: ${userName}\n\nTranscript:\n${transcript}`,
-                },
-              ],
-            },
-          ],
-          generationConfig: { responseMimeType: "application/json" },
-        });
+        const text = await callGemini(
+          apiKey,
+          {
+            system_instruction: { parts: [{ text: SUMMARY_SYSTEM }] },
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: `User name: ${userName}\n\nTranscript:\n${transcript}`,
+                  },
+                ],
+              },
+            ],
+            generationConfig: { responseMimeType: "application/json" },
+          },
+          modelName,
+        );
         return parseJSONSafe<AiSummaryResult>(text, emptySummary());
       }
 
       // Multi-chunk: summarise each chunk then merge
       const partials: AiSummaryResult[] = [];
       for (const chunk of chunks) {
-        const text = await callGemini(apiKey, {
-          system_instruction: { parts: [{ text: SUMMARY_SYSTEM }] },
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `User name: ${userName}\n\nTranscript (part):\n${chunk}`,
-                },
-              ],
-            },
-          ],
-          generationConfig: { responseMimeType: "application/json" },
-        });
+        const text = await callGemini(
+          apiKey,
+          {
+            system_instruction: { parts: [{ text: SUMMARY_SYSTEM }] },
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: `User name: ${userName}\n\nTranscript (part):\n${chunk}`,
+                  },
+                ],
+              },
+            ],
+            generationConfig: { responseMimeType: "application/json" },
+          },
+          modelName,
+        );
         partials.push(parseJSONSafe<AiSummaryResult>(text, emptySummary()));
       }
       return mergeSummaries(partials);
@@ -161,11 +173,15 @@ export function createGeminiProvider(apiKey: string): IAiProvider {
         ? `Summary:\n${JSON.stringify(summary)}\n\nTranscript:\n${transcript.slice(0, 12_000)}`
         : `Transcript:\n${transcript.slice(0, 12_000)}`;
 
-      const text = await callGemini(apiKey, {
-        system_instruction: { parts: [{ text: FLASHCARD_SYSTEM }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        generationConfig: { responseMimeType: "application/json" },
-      });
+      const text = await callGemini(
+        apiKey,
+        {
+          system_instruction: { parts: [{ text: FLASHCARD_SYSTEM }] },
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          generationConfig: { responseMimeType: "application/json" },
+        },
+        modelName,
+      );
       return parseJSONSafe<AiFlashcardResult[]>(text, []);
     },
   };
