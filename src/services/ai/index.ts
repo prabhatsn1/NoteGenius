@@ -18,12 +18,14 @@ export type {
 
 /**
  * Create the appropriate AI provider instance.
- * @param which    'offline' | 'gemini'
- * @param apiKey   Required when `which === 'gemini'`; ignored otherwise.
+ * @param which      'offline' | 'gemini'
+ * @param apiKey     Required when `which === 'gemini'`; ignored otherwise.
+ * @param modelName  Gemini model ID (e.g. 'gemini-2.0-flash'). Defaults to 'gemini-2.0-flash'.
  */
 export function makeAiProvider(
   which: AIProvider,
   apiKey?: string,
+  modelName?: string,
 ): IAiProvider {
   if (which === "gemini") {
     if (!apiKey) {
@@ -32,7 +34,7 @@ export function makeAiProvider(
       );
       return OfflineProvider;
     }
-    return createGeminiProvider(apiKey);
+    return createGeminiProvider(apiKey, modelName);
   }
   return OfflineProvider;
 }
