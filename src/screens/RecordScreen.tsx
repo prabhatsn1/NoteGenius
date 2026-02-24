@@ -60,10 +60,15 @@ export default function RecordScreen() {
   const startTimeRef = useRef<number>(0);
   const pausedDurationRef = useRef<number>(0);
   const pauseStartRef = useRef<number>(0);
-  // Tracks cumulative text already committed to segments for the current STT
-  // session. iOS AVSpeechRecognizer fires onSpeechResults multiple times with
-  // the full accumulated text, so we only save the incremental delta.
+  // Tracks the text committed to segments so far in this STT session so that
+  // on session end we only save the incremental delta (not the full cumulative).
   const lastCommittedTextRef = useRef<string>("");
+  // Mirror of the languageCode state — safe to read inside async callbacks/refs.
+  // Initialized to the same default as the languageCode useState below.
+  const languageCodeRef = useRef<string>("en-US");
+  // Set to true before an intentional stop/pause so that onSessionEnd does NOT
+  // auto-restart the recogniser.
+  const isIntentionallyStoppingRef = useRef<boolean>(false);
 
   const {
     status,
@@ -87,6 +92,11 @@ export default function RecordScreen() {
 
   const [typedText, setTypedText] = useState("");
   const [languageCode, setLanguageCode] = useState("en-US");
+
+  // Keep the ref in sync so onSessionEnd closures always see the latest code.
+  useEffect(() => {
+    languageCodeRef.current = languageCode;
+  }, [languageCode]);
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
   const transcriptScrollRef = useRef<ScrollView>(null);
 
@@ -125,11 +135,32 @@ export default function RecordScreen() {
 
     // Start STT
     lastCommittedTextRef.current = ""; // reset for new session
+    isIntentionallyStoppingRef.current = false;
     const stt = getSTTProvider();
+
+    /**
+     * Called when a recognition session truly ends (onSpeechEnd).
+     * Commits any pending transcript as a segment, then auto-restarts
+     * recognition so transcription continues uninterrupted.
+     */
+    const handleSessionEnd = () => {
+      if (isIntentionallyStoppingRef.current) {
+        // Explicit pause/stop triggered this end — do not restart.
+        isIntentionallyStoppingRef.current = false;
+        return;
+      }
+      // Auto-restart for continuous transcription.
+      lastCommittedTextRef.current = "";
+      stt
+        .start(languageCodeRef.current)
+        .catch((err) => console.warn("[STT auto-restart]", err));
+    };
+
     stt.onResult = (text, isFinal) => {
       setLiveTranscript(text);
       if (isFinal && text.trim()) {
-        // iOS returns cumulative text; extract only the new portion.
+        // The sttProvider only emits isFinal=true from onSpeechEnd, so this
+        // text is the genuine final transcript for the completed session.
         const fullText = text.trim();
         const delta = fullText.startsWith(lastCommittedTextRef.current)
           ? fullText.slice(lastCommittedTextRef.current.length).trim()
@@ -150,6 +181,7 @@ export default function RecordScreen() {
         setLiveTranscript("");
       }
     };
+    stt.onSessionEnd = handleSessionEnd;
     stt.onError = (err) => {
       console.warn("[STT Error]", err);
     };
@@ -184,19 +216,48 @@ export default function RecordScreen() {
 
   // ─── Pause Recording ──────────────────────────────────────────────────
   const handlePause = useCallback(async () => {
-    await AudioRecorder.pause();
+    // Commit any in-flight live transcript before killing the STT session.
+    const { liveTranscript: pendingText, noteId: currentNoteId } =
+      useRecordingStore.getState();
+    if (pendingText.trim() && currentNoteId) {
+      const now = Date.now();
+      const seg: NoteSegment = {
+        id: generateId(),
+        noteId: currentNoteId,
+        source: "voice",
+        text: pendingText.trim(),
+        startMs: now - startTimeRef.current - pausedDurationRef.current,
+        endMs: now - startTimeRef.current - pausedDurationRef.current,
+      };
+      addSessionSegment(seg);
+      setLiveTranscript("");
+    }
+
+    // Use cancel() instead of stop() so the native engine tears down
+    // immediately WITHOUT firing onSpeechEnd — avoiding the async race where
+    // a stale onSpeechEnd fires after the user has already resumed and
+    // triggers a second Voice.start() on top of the new session.
+    isIntentionallyStoppingRef.current = true;
     const stt = getSTTProvider();
-    await stt.stop();
+    await stt.cancel();
+
+    await AudioRecorder.pause();
     pauseStartRef.current = Date.now();
     if (timerRef.current) clearInterval(timerRef.current);
     if (meteringRef.current) clearInterval(meteringRef.current);
     setStatus("paused");
-  }, []);
+  }, [addSessionSegment, setLiveTranscript]);
 
   // ─── Resume Recording ─────────────────────────────────────────────────
   const handleResume = useCallback(async () => {
     await AudioRecorder.resume();
+
+    // Give the native Voice engine a moment to fully settle after cancel()
+    // before starting a new recognition session.
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+
     lastCommittedTextRef.current = ""; // reset for new STT session after resume
+    isIntentionallyStoppingRef.current = false;
     const stt = getSTTProvider();
     await stt.start(languageCode);
     pausedDurationRef.current += Date.now() - pauseStartRef.current;
@@ -218,52 +279,95 @@ export default function RecordScreen() {
   // ─── Stop Recording ───────────────────────────────────────────────────
   const handleStop = useCallback(async () => {
     clearTimers();
+
     const stt = getSTTProvider();
+    isIntentionallyStoppingRef.current = true; // prevent onSessionEnd from restarting
     await stt.stop();
+
+    // Give the STT engine time to fire onSpeechEnd and flush the final segment.
+    // 600 ms is conservative but reliable on both physical devices and simulators.
+    await new Promise<void>((resolve) => setTimeout(resolve, 600));
+
+    // After the wait, commit ANY remaining liveTranscript that the STT callback
+    // may have updated (or that was pending before stop) – this is the canonical
+    // "last words" safety net.
+    const { liveTranscript: pendingText, noteId: currentNoteId } =
+      useRecordingStore.getState();
+    if (pendingText.trim() && currentNoteId) {
+      const now = Date.now();
+      const seg: NoteSegment = {
+        id: generateId(),
+        noteId: currentNoteId,
+        source: "voice",
+        text: pendingText.trim(),
+        startMs: now - startTimeRef.current - pausedDurationRef.current,
+        endMs: now - startTimeRef.current - pausedDurationRef.current,
+      };
+      addSessionSegment(seg);
+      setLiveTranscript("");
+    }
 
     const result = await AudioRecorder.stop();
 
-    if (noteId && result) {
-      // Merge all voice segments into one, keep typed segments as-is
-      const voiceSegs = sessionSegments.filter((s) => s.source === "voice");
-      const typedSegs = sessionSegments.filter((s) => s.source === "typed");
+    // Read fresh state – avoids stale-closure bug where segments added by the
+    // onSpeechEnd callback (above awaits) are invisible to this function.
+    const { noteId: freshNoteId, sessionSegments: freshSegments } =
+      useRecordingStore.getState();
 
-      const mergedVoice: NoteSegment | null =
-        voiceSegs.length > 0
-          ? {
-              id: generateId(),
-              noteId,
-              source: "voice",
-              text: voiceSegs.map((s) => s.text).join(" "),
-              startMs: voiceSegs[0].startMs,
-              endMs: voiceSegs[voiceSegs.length - 1].endMs,
-            }
-          : null;
+    if (!freshNoteId) {
+      setStatus("idle");
+      resetRecording();
+      return;
+    }
 
-      const segmentsToSave = [
-        ...(mergedVoice ? [mergedVoice] : []),
-        ...typedSegs,
-      ];
+    // Merge all voice segments into one; keep typed segments as-is.
+    // Segments are saved regardless of whether audio recording succeeded so
+    // the transcript is never lost even if the audio file failed.
+    const voiceSegs = freshSegments.filter((s) => s.source === "voice");
+    const typedSegs = freshSegments.filter((s) => s.source === "typed");
+
+    const mergedVoice: NoteSegment | null =
+      voiceSegs.length > 0
+        ? {
+            id: generateId(),
+            noteId: freshNoteId,
+            source: "voice",
+            text: voiceSegs.map((s) => s.text).join(" "),
+            startMs: voiceSegs[0].startMs,
+            endMs: voiceSegs[voiceSegs.length - 1].endMs,
+          }
+        : null;
+
+    const segmentsToSave = [
+      ...(mergedVoice ? [mergedVoice] : []),
+      ...typedSegs,
+    ];
+
+    if (segmentsToSave.length > 0) {
       await addSegments(segmentsToSave);
+    }
 
-      // Update note with audio path and duration
+    // Update note title; add audio path/duration only if recorder succeeded.
+    if (result) {
       await updateNote({
-        id: noteId,
+        id: freshNoteId,
         audioPath: result.uri,
         durationMs: result.durationMs,
         title: `Recording – ${new Date().toLocaleDateString()}`,
       });
-
-      setStatus("stopped");
-
-      // Navigate to note detail
-      router.push(`/note/${noteId}` as any);
-      resetRecording();
     } else {
-      setStatus("idle");
-      resetRecording();
+      await updateNote({
+        id: freshNoteId,
+        title: `Recording – ${new Date().toLocaleDateString()}`,
+      });
     }
-  }, [noteId, sessionSegments]);
+
+    setStatus("stopped");
+
+    // Navigate to note detail
+    router.push(`/note/${freshNoteId}` as any);
+    resetRecording();
+  }, []);
 
   // ─── Submit typed text ────────────────────────────────────────────────
   const handleSubmitTyped = useCallback(() => {
