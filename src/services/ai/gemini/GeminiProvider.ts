@@ -33,6 +33,8 @@ const FLASHCARD_SYSTEM = `You are an educational flashcard generator. Given a tr
   front (string), back (string), tags (string[]).
 Return ONLY a valid JSON array – no markdown fences, no extra text. Generate 10-20 cards.`;
 
+const TITLE_SYSTEM = `You are a note-titling assistant. Given a transcript, generate a concise and meaningful title for the note in 5 words or fewer. Return ONLY the title text – no quotes, no trailing punctuation, no extra text.`;
+
 // ─── REST helpers ────────────────────────────────────────────────────────────
 
 interface GeminiRequestBody {
@@ -163,6 +165,30 @@ export function createGeminiProvider(
         partials.push(parseJSONSafe<AiSummaryResult>(text, emptySummary()));
       }
       return mergeSummaries(partials);
+    },
+
+    async generateTitle(transcript: string): Promise<string> {
+      try {
+        const snippet = transcript.slice(0, 4_000);
+        const text = await callGemini(
+          apiKey,
+          {
+            system_instruction: { parts: [{ text: TITLE_SYSTEM }] },
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: `Transcript:\n${snippet}` }],
+              },
+            ],
+          },
+          modelName,
+        );
+        const title = text.trim().replace(/^["']|["']$/g, "");
+        return title.slice(0, 60);
+      } catch (err) {
+        console.warn("[GeminiProvider] generateTitle failed:", err);
+        return "";
+      }
     },
 
     async generateFlashcards(
