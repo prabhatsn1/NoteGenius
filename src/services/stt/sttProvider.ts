@@ -16,6 +16,11 @@ export interface STTProvider {
   cancel(): Promise<void>;
   onResult: ((text: string, isFinal: boolean) => void) | null;
   onError: ((error: string) => void) | null;
+  /**
+   * Called when a recognition session truly ends (after silence or explicit
+   * stop). The caller can use this to auto-restart STT for continuous capture.
+   */
+  onSessionEnd: (() => void) | null;
   isAvailable(): Promise<boolean>;
 }
 
@@ -23,17 +28,32 @@ export interface STTProvider {
 class VoiceSTTProvider implements STTProvider {
   onResult: ((text: string, isFinal: boolean) => void) | null = null;
   onError: ((error: string) => void) | null = null;
+  onSessionEnd: (() => void) | null = null;
+
+  /**
+   * iOS AVSpeechRecognizer fires onSpeechResults multiple times as it updates
+   * its hypothesis while you speak — not only at the true end of the utterance.
+   * We buffer the latest value here and only emit isFinal=true when
+   * onSpeechEnd fires (the genuine session end).
+   */
+  private latestFinalText: string = "";
 
   constructor() {
     Voice.onSpeechResults = this.handleResults;
     Voice.onSpeechPartialResults = this.handlePartial;
     Voice.onSpeechError = this.handleError;
     Voice.onSpeechStart = this.handleStart;
+    Voice.onSpeechEnd = this.handleEnd;
   }
 
+  /**
+   * Intermediate "final" hypothesis from iOS — buffer it and show as partial
+   * so the live transcript updates, but don't commit a segment yet.
+   */
   private handleResults = (e: SpeechResultsEvent) => {
     const text = e.value?.[0] ?? "";
-    this.onResult?.(text, true);
+    this.latestFinalText = text;
+    this.onResult?.(text, false); // display only — not a committed segment yet
   };
 
   private handlePartial = (e: SpeechResultsEvent) => {
@@ -41,12 +61,25 @@ class VoiceSTTProvider implements STTProvider {
     this.onResult?.(text, false);
   };
 
+  /**
+   * True session end: commit the buffered final text, then notify caller so
+   * it can restart recognition for continuous streaming.
+   */
+  private handleEnd = (_e: unknown) => {
+    if (this.latestFinalText) {
+      this.onResult?.(this.latestFinalText, true);
+      this.latestFinalText = "";
+    }
+    this.onSessionEnd?.();
+  };
+
   private handleError = (e: SpeechErrorEvent) => {
+    this.latestFinalText = ""; // discard stale buffer on error
     this.onError?.(e.error?.message ?? "STT error");
   };
 
   private handleStart = (_e: SpeechStartEvent) => {
-    // recording started
+    // recognition session started
   };
 
   async start(locale: string): Promise<void> {
@@ -67,6 +100,7 @@ class VoiceSTTProvider implements STTProvider {
 
   async cancel(): Promise<void> {
     try {
+      this.latestFinalText = ""; // discard buffered text — no commit on cancel
       await Voice.cancel();
     } catch (err) {
       console.error("[VoiceSTT] cancel error:", err);
@@ -85,6 +119,7 @@ class VoiceSTTProvider implements STTProvider {
 
   /** Clean up listeners on unmount. */
   destroy(): void {
+    this.latestFinalText = "";
     Voice.destroy().then(Voice.removeAllListeners);
   }
 }
@@ -93,6 +128,7 @@ class VoiceSTTProvider implements STTProvider {
 class OfflineSTTProvider implements STTProvider {
   onResult: ((text: string, isFinal: boolean) => void) | null = null;
   onError: ((error: string) => void) | null = null;
+  onSessionEnd: (() => void) | null = null;
 
   async start(_locale: string): Promise<void> {
     // Stub: would initialize local model here
