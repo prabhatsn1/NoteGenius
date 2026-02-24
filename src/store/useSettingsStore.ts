@@ -4,13 +4,14 @@
  */
 import { create } from "zustand";
 import { SettingsRepo } from "../data/repos/SettingsRepo";
-import type { AIProvider, AppSettings } from "../types/models";
+import type { AIProvider, AppSettings, GeminiModel } from "../types/models";
 
 interface SettingsState {
   settings: AppSettings;
   loadSettings: () => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
   setAIProvider: (provider: AIProvider) => void;
+  setGeminiModel: (model: GeminiModel) => void;
   acknowledgeGeminiPrivacy: () => void;
 }
 
@@ -28,6 +29,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setAIProvider: (provider: AIProvider) => {
     get().updateSettings({ aiProvider: provider });
+  },
+
+  setGeminiModel: (model: GeminiModel) => {
+    get().updateSettings({ geminiModel: model });
   },
 
   acknowledgeGeminiPrivacy: () => {
