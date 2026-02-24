@@ -1,18 +1,23 @@
 /**
  * NoteGenius – Notes List Screen.
- * Shows all saved notes sorted by most recent.
+ * Supports: full-text search, tag filtering, pinning/starring.
  */
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
   FlatList,
+  Keyboard,
+  Modal,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { SwipeableNoteCard } from "../components/SwipeableNoteCard";
+import { UndoToast } from "../components/UndoToast";
 import {
   BorderRadius,
   FontSize,
@@ -21,100 +26,260 @@ import {
 } from "../constants/theme";
 import { useNotesStore } from "../store/useNotesStore";
 import type { Note } from "../types/models";
-import { formatDuration, timeAgo } from "../utils/time";
+
+// ─── Tag Editor Modal ────────────────────────────────────────────────────────
+
+interface TagsModalProps {
+  note: Note | null;
+  visible: boolean;
+  onClose: () => void;
+  onSave: (noteId: string, tags: string[]) => void;
+}
+
+function TagsModal({ note, visible, onClose, onSave }: TagsModalProps) {
+  const colors = useThemeColors();
+  const [tags, setTags] = useState<string[]>([]);
+  const [input, setInput] = useState("");
+
+  useEffect(() => {
+    if (note) setTags(note.tags ?? []);
+  }, [note]);
+
+  const addTag = () => {
+    const trimmed = input.trim().toLowerCase();
+    if (trimmed && !tags.includes(trimmed)) {
+      setTags((t) => [...t, trimmed]);
+    }
+    setInput("");
+  };
+
+  const removeTag = (tag: string) => setTags((t) => t.filter((x) => x !== tag));
+
+  const handleSave = () => {
+    if (note) onSave(note.id, tags);
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={styles.modalBackdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      />
+      <View
+        style={[
+          styles.modalSheet,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.modalTitle, { color: colors.text }]}>
+          Edit Tags
+        </Text>
+        <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+          {note?.title}
+        </Text>
+
+        {/* Existing tags */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.existingTagsScroll}
+        >
+          <View style={styles.tagRow}>
+            {tags.length === 0 ? (
+              <Text style={[styles.noTagsHint, { color: colors.textMuted }]}>
+                No tags yet
+              </Text>
+            ) : (
+              tags.map((tag) => (
+                <TouchableOpacity
+                  key={tag}
+                  style={[
+                    styles.tagChipEditable,
+                    {
+                      backgroundColor: colors.accent + "22",
+                      borderColor: colors.accent + "44",
+                    },
+                  ]}
+                  onPress={() => removeTag(tag)}
+                >
+                  <Text style={[styles.tagChipText, { color: colors.accent }]}>
+                    {tag}
+                  </Text>
+                  <Text
+                    style={[styles.tagChipRemove, { color: colors.accent }]}
+                  >
+                    ✕
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        </ScrollView>
+
+        {/* Add new tag */}
+        <View style={[styles.tagInputRow, { borderColor: colors.border }]}>
+          <TextInput
+            style={[styles.tagInput, { color: colors.text }]}
+            placeholder="Add a tag…"
+            placeholderTextColor={colors.textMuted}
+            value={input}
+            onChangeText={setInput}
+            onSubmitEditing={addTag}
+            returnKeyType="done"
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={[styles.tagAddBtn, { backgroundColor: colors.primary }]}
+            onPress={addTag}
+          >
+            <Text style={styles.tagAddBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.modalActions}>
+          <TouchableOpacity
+            style={[
+              styles.modalBtn,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+            onPress={onClose}
+          >
+            <Text
+              style={[styles.modalBtnText, { color: colors.textSecondary }]}
+            >
+              Cancel
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+            onPress={handleSave}
+          >
+            <Text style={[styles.modalBtnText, { color: "#fff" }]}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function NotesScreen() {
   const colors = useThemeColors();
   const router = useRouter();
-  const { notes, isLoading, loadNotes, deleteNote } = useNotesStore();
+  const {
+    displayNotes,
+    allTags,
+    searchQuery,
+    selectedTag,
+    loadNotes,
+    softDeleteNote,
+    undoDeleteNote,
+    archiveNote,
+    undoArchiveNote,
+    togglePin,
+    updateNoteTags,
+    setSearchQuery,
+    setSelectedTag,
+  } = useNotesStore();
+
+  const [tagsModalNote, setTagsModalNote] = useState<Note | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [undoToast, setUndoToast] = useState<{
+    visible: boolean;
+    message: string;
+    onUndo: () => void;
+  }>({ visible: false, message: "", onUndo: () => {} });
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadNotes();
   }, []);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadNotes();
+    setRefreshing(false);
+  }, [loadNotes]);
+
+  // ─── Handlers ──────────────────────────────────────────────────────────────
+
   const handlePress = useCallback((noteId: string) => {
     router.push(`/note/${noteId}` as any);
   }, []);
 
-  const handleDelete = useCallback((noteId: string, title: string) => {
-    Alert.alert(
-      "Delete Note",
-      `Are you sure you want to delete "${title}"? This will also delete its summary and flashcards.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteNote(noteId),
-        },
-      ],
-    );
+  const handleDelete = useCallback(
+    (noteId: string, title: string) => {
+      softDeleteNote(noteId);
+      setUndoToast({
+        visible: true,
+        message: `"${title}" deleted`,
+        onUndo: undoDeleteNote,
+      });
+    },
+    [softDeleteNote, undoDeleteNote],
+  );
+
+  const handleArchive = useCallback(
+    (noteId: string, title: string) => {
+      archiveNote(noteId);
+      setUndoToast({
+        visible: true,
+        message: `"${title}" archived`,
+        onUndo: undoArchiveNote,
+      });
+    },
+    [archiveNote, undoArchiveNote],
+  );
+
+  const handleToastDismiss = useCallback(() => {
+    setUndoToast((t) => ({ ...t, visible: false }));
   }, []);
 
-  const renderNote = ({ item }: { item: Note }) => (
-    <TouchableOpacity
-      style={[
-        styles.noteCard,
-        { backgroundColor: colors.card, borderColor: colors.border },
-      ]}
-      onPress={() => handlePress(item.id)}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`Note: ${item.title}`}
-    >
-      <View style={styles.noteHeader}>
-        <Text
-          style={[styles.noteTitle, { color: colors.text }]}
-          numberOfLines={1}
-        >
-          {item.title || "Untitled"}
-        </Text>
-        <View style={styles.noteHeaderRight}>
-          <Text style={[styles.noteTime, { color: colors.textMuted }]}>
-            {timeAgo(item.updatedAt)}
-          </Text>
-          <TouchableOpacity
-            onPress={() => handleDelete(item.id, item.title)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityLabel={`Delete note: ${item.title}`}
-            accessibilityRole="button"
-            style={[
-              styles.deleteButton,
-              { backgroundColor: colors.danger + "18" },
-            ]}
-          >
-            <Text style={styles.deleteIcon}>🗑</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  const handleSearchChange = useCallback((text: string) => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => {
+      setSearchQuery(text);
+    }, 300);
+  }, []);
 
-      <View style={styles.noteMeta}>
-        {item.durationMs ? (
-          <View
-            style={[
-              styles.metaBadge,
-              { backgroundColor: colors.primary + "15" },
-            ]}
-          >
-            <Text style={[styles.metaText, { color: colors.primary }]}>
-              🎤 {formatDuration(item.durationMs)}
-            </Text>
-          </View>
-        ) : null}
-        {item.languageCode ? (
-          <View
-            style={[
-              styles.metaBadge,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              🌐 {item.languageCode}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </TouchableOpacity>
+  const handleClearSearch = useCallback(() => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    setSearchQuery("");
+  }, []);
+
+  const handleTagFilter = useCallback(
+    (tag: string | null) => {
+      Keyboard.dismiss();
+      setSelectedTag(selectedTag === tag ? null : tag);
+    },
+    [selectedTag],
+  );
+
+  const handleTagSave = useCallback((noteId: string, tags: string[]) => {
+    updateNoteTags(noteId, tags);
+  }, []);
+
+  // ─── Render helpers ─────────────────────────────────────────────────────────
+
+  const renderNote = ({ item }: { item: Note }) => (
+    <SwipeableNoteCard
+      note={item}
+      selectedTag={selectedTag}
+      onPress={handlePress}
+      onDelete={handleDelete}
+      onArchive={handleArchive}
+      onTogglePin={togglePin}
+      onEditTags={setTagsModalNote}
+      onTagFilter={(tag) => handleTagFilter(tag)}
+    />
   );
 
   return (
@@ -123,29 +288,145 @@ export default function NotesScreen() {
     >
       <Text style={[styles.title, { color: colors.text }]}>Notes</Text>
 
+      {/* ── Search bar ── */}
+      <View
+        style={[
+          styles.searchBar,
+          {
+            backgroundColor: colors.surfaceVariant,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={styles.searchIcon}>🔍</Text>
+        <TextInput
+          style={[styles.searchInput, { color: colors.text }]}
+          placeholder="Search notes, transcripts, summaries…"
+          placeholderTextColor={colors.textMuted}
+          onChangeText={handleSearchChange}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            onPress={handleClearSearch}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.clearIcon, { color: colors.textMuted }]}>
+              ✕
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── Tag filter chips ── */}
+      {allTags.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tagFilterScroll}
+          contentContainerStyle={styles.tagFilterContent}
+        >
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              {
+                backgroundColor:
+                  selectedTag === null ? colors.primary : colors.surfaceVariant,
+                borderColor:
+                  selectedTag === null ? colors.primary : colors.border,
+              },
+            ]}
+            onPress={() => handleTagFilter(null)}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                { color: selectedTag === null ? "#fff" : colors.textSecondary },
+              ]}
+            >
+              All
+            </Text>
+          </TouchableOpacity>
+          {allTags.map((tag) => (
+            <TouchableOpacity
+              key={tag}
+              style={[
+                styles.filterChip,
+                {
+                  backgroundColor:
+                    selectedTag === tag ? colors.accent : colors.surfaceVariant,
+                  borderColor:
+                    selectedTag === tag ? colors.accent : colors.border,
+                },
+              ]}
+              onPress={() => handleTagFilter(tag)}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  {
+                    color: selectedTag === tag ? "#fff" : colors.textSecondary,
+                  },
+                ]}
+              >
+                #{tag}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* ── Note list ── */}
       <FlatList
-        data={notes}
+        data={displayNotes}
         keyExtractor={(item) => item.id}
         renderItem={renderNote}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        refreshing={isLoading}
-        onRefresh={loadNotes}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={[styles.emptyIcon]}>📝</Text>
+            <Text style={styles.emptyIcon}>
+              {searchQuery || selectedTag ? "🔍" : "📝"}
+            </Text>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              No notes yet
+              {searchQuery || selectedTag ? "No results" : "No notes yet"}
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-              Go to the Record tab to create your first voice note
+              {searchQuery || selectedTag
+                ? "Try a different search or tag filter"
+                : "Go to the Record tab to create your first voice note"}
             </Text>
           </View>
         }
       />
+
+      {/* ── Tag editor modal ── */}
+      <TagsModal
+        note={tagsModalNote}
+        visible={tagsModalNote !== null}
+        onClose={() => setTagsModalNote(null)}
+        onSave={handleTagSave}
+      />
+
+      {/* ── Undo toast (delete or archive) ── */}
+      <UndoToast
+        visible={undoToast.visible}
+        message={undoToast.message}
+        onUndo={undoToast.onUndo}
+        onDismiss={handleToastDismiss}
+        duration={5000}
+      />
     </SafeAreaView>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -155,58 +436,55 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FontSize.xxl,
     fontWeight: "800",
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
+  // Search
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  searchIcon: {
+    fontSize: 16,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: FontSize.md,
+    paddingVertical: 2,
+  },
+  clearIcon: {
+    fontSize: 14,
+    paddingHorizontal: 4,
+  },
+  // Tag filter bar
+  tagFilterScroll: {
+    marginBottom: Spacing.sm,
+    flexGrow: 0,
+  },
+  tagFilterContent: {
+    gap: Spacing.xs,
+    paddingRight: Spacing.md,
+  },
+  filterChip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: FontSize.sm,
+    fontWeight: "600",
+  },
+  // List
   list: {
     paddingBottom: Spacing.xxl,
   },
-  noteCard: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    marginBottom: Spacing.sm,
-  },
-  noteHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.xs,
-  },
-  noteTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: "600",
-    flex: 1,
-    marginRight: Spacing.sm,
-  },
-  noteHeaderRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  noteTime: {
-    fontSize: FontSize.xs,
-  },
-  deleteButton: {
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
-  },
-  deleteIcon: {
-    fontSize: 14,
-  },
-  noteMeta: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  metaBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-  },
-  metaText: {
-    fontSize: FontSize.xs,
-    fontWeight: "600",
-  },
+  // Empty state
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -224,6 +502,92 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: FontSize.md,
     textAlign: "center",
-    maxWidth: 250,
+    maxWidth: 260,
+  },
+  // Tags modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  modalSheet: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    gap: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: "700",
+  },
+  modalSubtitle: {
+    fontSize: FontSize.sm,
+    marginTop: -Spacing.sm,
+  },
+  existingTagsScroll: {
+    flexGrow: 0,
+  },
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+    minHeight: 32,
+  },
+  noTagsHint: {
+    fontSize: FontSize.sm,
+    fontStyle: "italic",
+  },
+  tagChipEditable: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    gap: 4,
+  },
+  tagChipText: {
+    fontSize: FontSize.sm,
+    fontWeight: "600",
+  },
+  tagChipRemove: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  tagInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+  },
+  tagInput: {
+    flex: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.md,
+  },
+  tagAddBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  tagAddBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: FontSize.sm,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+  },
+  modalBtnText: {
+    fontWeight: "700",
+    fontSize: FontSize.md,
   },
 });
