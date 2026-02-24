@@ -94,8 +94,16 @@ export interface UserProfile {
 // ─── Settings ───────────────────────────────────────────────────────────────
 export type AIProvider = "offline" | "gemini";
 
+/**
+ * Gemini model identifier string as returned by the
+ * Google AI `GET /v1beta/models` endpoint (without the "models/" prefix).
+ */
+export type GeminiModel = string;
+
 export interface AppSettings {
   aiProvider: AIProvider;
+  /** Which Gemini model to use when aiProvider === 'gemini' */
+  geminiModel: GeminiModel;
   autoPunctuate: boolean;
   sampleRate: number; // Hz
   silenceTrimming: boolean;
