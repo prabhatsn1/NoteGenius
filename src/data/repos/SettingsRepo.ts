@@ -20,6 +20,7 @@ const SECURE_KEYS = {
 
 const DEFAULT_SETTINGS: AppSettings = {
   aiProvider: "offline",
+  geminiModel: "gemini-2.0-flash",
   autoPunctuate: true,
   sampleRate: 44100,
   silenceTrimming: false,
