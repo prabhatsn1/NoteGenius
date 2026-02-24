@@ -32,7 +32,7 @@ export type AiFlashcardResult = Omit<
 >;
 
 /**
- * Every AI provider must implement these two methods.
+ * Every AI provider must implement these methods.
  * `transcript` is the concatenated segment text – the minimum data shared.
  */
 export interface IAiProvider {
@@ -55,4 +55,12 @@ export interface IAiProvider {
     transcript: string,
     summary: AiSummaryResult | null,
   ): Promise<AiFlashcardResult[]>;
+
+  /**
+   * Generate a concise, meaningful title for a note from its transcript.
+   * Returns a short string (≤ 60 chars). Providers should never throw;
+   * return an empty string on failure so the caller can fall back gracefully.
+   * @param transcript  Full text of the note (segments joined).
+   */
+  generateTitle(transcript: string): Promise<string>;
 }

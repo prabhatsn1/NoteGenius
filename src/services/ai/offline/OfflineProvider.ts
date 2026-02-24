@@ -177,6 +177,19 @@ export const OfflineProvider: IAiProvider = {
     };
   },
 
+  async generateTitle(transcript: string): Promise<string> {
+    try {
+      const keywords = extractKeywords(transcript.slice(0, 2_000), 5);
+      if (keywords.length === 0) return "";
+      const meaningful = keywords.filter((k) => k.length > 3).slice(0, 4);
+      const words = meaningful.length > 0 ? meaningful : keywords.slice(0, 3);
+      return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    } catch (err) {
+      console.warn("[OfflineProvider] generateTitle failed:", err);
+      return "";
+    }
+  },
+
   async generateFlashcards(
     transcript: string,
     summary: AiSummaryResult | null,

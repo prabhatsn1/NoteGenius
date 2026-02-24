@@ -30,7 +30,9 @@ async function createTables(db: SQLite.SQLiteDatabase): Promise<void> {
       updatedAt INTEGER NOT NULL,
       audioPath TEXT,
       durationMs INTEGER,
-      languageCode TEXT DEFAULT 'en-US'
+      languageCode TEXT DEFAULT 'en-US',
+      tags TEXT NOT NULL DEFAULT '[]',
+      isPinned INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS segments (
@@ -94,7 +96,7 @@ export async function closeDatabase(): Promise<void> {
 
 // ─── Migrations ─────────────────────────────────────────────────────────────
 
-const CURRENT_DB_VERSION = 1;
+const CURRENT_DB_VERSION = 3;
 
 /**
  * Run schema / data migrations keyed by PRAGMA user_version.
@@ -111,6 +113,21 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.execAsync(`
       UPDATE summaries SET provider = 'offline'  WHERE provider = 'local';
       UPDATE summaries SET provider = 'gemini'   WHERE provider = 'cloud';
+    `);
+  }
+
+  if (version < 2) {
+    // v2: Add tags (JSON array) and isPinned (boolean) to notes
+    await db.execAsync(`
+      ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE notes ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0;
+    `);
+  }
+
+  if (version < 3) {
+    // v3: Add isArchived (boolean) to notes
+    await db.execAsync(`
+      ALTER TABLE notes ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0;
     `);
   }
 
