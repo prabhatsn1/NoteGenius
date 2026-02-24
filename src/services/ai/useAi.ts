@@ -16,10 +16,11 @@ import { makeAiProvider } from "./index";
  */
 export function useAi(): IAiProvider {
   const aiProvider = useSettingsStore((s) => s.settings.aiProvider);
+  const geminiModel = useSettingsStore((s) => s.settings.geminiModel);
   const geminiApiKey = useUserStore((s) => s.profile?.geminiApiKey);
 
   return useMemo(
-    () => makeAiProvider(aiProvider, geminiApiKey),
-    [aiProvider, geminiApiKey],
+    () => makeAiProvider(aiProvider, geminiApiKey, geminiModel),
+    [aiProvider, geminiApiKey, geminiModel],
   );
 }
