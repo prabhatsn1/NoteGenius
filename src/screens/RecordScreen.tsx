@@ -23,6 +23,7 @@ import {
   Spacing,
   useThemeColors,
 } from "../constants/theme";
+import { makeAiProvider } from "../services/ai";
 import { AudioRecorder } from "../services/audio/recorder";
 import {
   destroySTTProvider,
@@ -30,8 +31,11 @@ import {
 } from "../services/stt/sttProvider";
 import { useNotesStore } from "../store/useNotesStore";
 import { useRecordingStore } from "../store/useRecordingStore";
+import { useSettingsStore } from "../store/useSettingsStore";
+import { useUserStore } from "../store/useUserStore";
 import type { NoteSegment } from "../types/models";
 import { Permissions } from "../utils/permissions";
+import { normalizeTranscript } from "../utils/text";
 import { formatDuration } from "../utils/time";
 import { generateId } from "../utils/uuid";
 
@@ -172,7 +176,7 @@ export default function RecordScreen() {
             id: generateId(),
             noteId: note.id,
             source: "voice",
-            text: delta,
+            text: normalizeTranscript(delta),
             startMs: now - startTimeRef.current - pausedDurationRef.current,
             endMs: now - startTimeRef.current - pausedDurationRef.current,
           };
@@ -225,7 +229,7 @@ export default function RecordScreen() {
         id: generateId(),
         noteId: currentNoteId,
         source: "voice",
-        text: pendingText.trim(),
+        text: normalizeTranscript(pendingText.trim()),
         startMs: now - startTimeRef.current - pausedDurationRef.current,
         endMs: now - startTimeRef.current - pausedDurationRef.current,
       };
@@ -299,7 +303,7 @@ export default function RecordScreen() {
         id: generateId(),
         noteId: currentNoteId,
         source: "voice",
-        text: pendingText.trim(),
+        text: normalizeTranscript(pendingText.trim()),
         startMs: now - startTimeRef.current - pausedDurationRef.current,
         endMs: now - startTimeRef.current - pausedDurationRef.current,
       };
@@ -347,18 +351,38 @@ export default function RecordScreen() {
       await addSegments(segmentsToSave);
     }
 
+    // Generate an AI title from the transcript (best-effort; never blocks navigation).
+    const transcript = segmentsToSave.map((s) => s.text).join(" ");
+    const fallbackTitle = `Recording – ${new Date().toLocaleDateString()}`;
+    let noteTitle = fallbackTitle;
+    if (transcript.trim().length > 0) {
+      try {
+        const { settings } = useSettingsStore.getState();
+        const { profile } = useUserStore.getState();
+        const aiProvider = makeAiProvider(
+          settings.aiProvider,
+          profile?.geminiApiKey,
+          settings.geminiModel,
+        );
+        const generated = await aiProvider.generateTitle(transcript);
+        if (generated.trim().length > 0) noteTitle = generated.trim();
+      } catch {
+        // silently fall back to date-based title
+      }
+    }
+
     // Update note title; add audio path/duration only if recorder succeeded.
     if (result) {
       await updateNote({
         id: freshNoteId,
         audioPath: result.uri,
         durationMs: result.durationMs,
-        title: `Recording – ${new Date().toLocaleDateString()}`,
+        title: noteTitle,
       });
     } else {
       await updateNote({
         id: freshNoteId,
-        title: `Recording – ${new Date().toLocaleDateString()}`,
+        title: noteTitle,
       });
     }
 
