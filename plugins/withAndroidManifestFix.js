@@ -13,6 +13,13 @@ const { withAndroidManifest } = require("expo/config-plugins");
 module.exports = function withAndroidManifestFix(config) {
   return withAndroidManifest(config, (config) => {
     const manifest = config.modResults;
+
+    // Ensure the tools namespace is declared on <manifest>
+    if (!manifest.manifest.$["xmlns:tools"]) {
+      manifest.manifest.$["xmlns:tools"] =
+        "http://schemas.android.com/tools";
+    }
+
     const application = manifest.manifest.application?.[0];
 
     if (application) {
