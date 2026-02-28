@@ -36,6 +36,7 @@ allprojects {
         exclude group: 'com.android.support', module: 'animated-vector-drawable'
         exclude group: 'com.android.support', module: 'support-vector-drawable'
         exclude group: 'com.android.support', module: 'versionedparcelable'
+        exclude group: 'com.android.support', module: 'customview'
     }
 }
 `;
