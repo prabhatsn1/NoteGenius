@@ -39,6 +39,7 @@
     "plugins": [
       "expo-router",
       "./plugins/withAndroidManifestFix",
+      "./plugins/withExcludeSupportLibs",
       [
         "expo-splash-screen",
         {
