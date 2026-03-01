@@ -3,6 +3,7 @@ ios
 android
 .expo
 .env
+.idea
 
 
 expo-env.d.ts
