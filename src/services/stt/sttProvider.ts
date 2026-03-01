@@ -1,150 +1,133 @@
 /**
  * NoteGenius – Speech-to-Text provider interface.
- * Default: uses @react-native-voice/voice for live streaming STT.
- * Provider interface allows swapping to offline (Vosk/Whisper) later.
+ * Uses whisper.rn for fully offline, on-device transcription.
+ * Audio is recorded via expo-audio and passed to Whisper after the session ends.
  */
-import Voice, {
-  SpeechErrorEvent,
-  SpeechResultsEvent,
-  SpeechStartEvent,
-} from "@react-native-voice/voice";
+import { initWhisper, type WhisperContext } from "whisper.rn";
+import { WhisperModelManager } from "./whisperModel";
 
 // ─── Provider Interface ──────────────────────────────────────────────────────
 export interface STTProvider {
+  /**
+   * Signal the start of a recording session.
+   * For Whisper this is a no-op STT-wise; actual transcription happens in stop().
+   */
   start(locale: string): Promise<void>;
-  stop(): Promise<void>;
+  /**
+   * Stop and, for Whisper, transcribe the recorded audio.
+   * Pass the audio file URI so the provider can run inference.
+   * Fires onResult(text, true) then onSessionEnd() when done.
+   */
+  stop(audioUri?: string): Promise<void>;
+  /** Cancel any in-progress transcription without emitting a result. */
   cancel(): Promise<void>;
   onResult: ((text: string, isFinal: boolean) => void) | null;
   onError: ((error: string) => void) | null;
-  /**
-   * Called when a recognition session truly ends (after silence or explicit
-   * stop). The caller can use this to auto-restart STT for continuous capture.
-   */
+  /** Called after transcription completes (or is cancelled). */
   onSessionEnd: (() => void) | null;
   isAvailable(): Promise<boolean>;
 }
 
-// ─── Default Voice STT Provider ──────────────────────────────────────────────
-class VoiceSTTProvider implements STTProvider {
+// ─── Locale helper ───────────────────────────────────────────────────────────
+/** Convert BCP-47 locale tags (e.g. "en-US", "hi-IN") to Whisper 2-letter codes. */
+function toWhisperLang(locale: string): string {
+  return locale.split("-")[0].toLowerCase();
+}
+
+// ─── Whisper STT Provider ────────────────────────────────────────────────────
+class WhisperSTTProvider implements STTProvider {
   onResult: ((text: string, isFinal: boolean) => void) | null = null;
   onError: ((error: string) => void) | null = null;
   onSessionEnd: (() => void) | null = null;
 
-  /**
-   * iOS AVSpeechRecognizer fires onSpeechResults multiple times as it updates
-   * its hypothesis while you speak — not only at the true end of the utterance.
-   * We buffer the latest value here and only emit isFinal=true when
-   * onSpeechEnd fires (the genuine session end).
-   */
-  private latestFinalText: string = "";
-
-  constructor() {
-    Voice.onSpeechResults = this.handleResults;
-    Voice.onSpeechPartialResults = this.handlePartial;
-    Voice.onSpeechError = this.handleError;
-    Voice.onSpeechStart = this.handleStart;
-    Voice.onSpeechEnd = this.handleEnd;
-  }
-
-  /**
-   * Intermediate "final" hypothesis from iOS — buffer it and show as partial
-   * so the live transcript updates, but don't commit a segment yet.
-   */
-  private handleResults = (e: SpeechResultsEvent) => {
-    const text = e.value?.[0] ?? "";
-    this.latestFinalText = text;
-    this.onResult?.(text, false); // display only — not a committed segment yet
-  };
-
-  private handlePartial = (e: SpeechResultsEvent) => {
-    const text = e.value?.[0] ?? "";
-    this.onResult?.(text, false);
-  };
-
-  /**
-   * True session end: commit the buffered final text, then notify caller so
-   * it can restart recognition for continuous streaming.
-   */
-  private handleEnd = (_e: unknown) => {
-    if (this.latestFinalText) {
-      this.onResult?.(this.latestFinalText, true);
-      this.latestFinalText = "";
-    }
-    this.onSessionEnd?.();
-  };
-
-  private handleError = (e: SpeechErrorEvent) => {
-    this.latestFinalText = ""; // discard stale buffer on error
-    this.onError?.(e.error?.message ?? "STT error");
-  };
-
-  private handleStart = (_e: SpeechStartEvent) => {
-    // recognition session started
-  };
+  private locale: string = "en";
+  private context: WhisperContext | null = null;
+  /** Function to abort an in-progress transcription. */
+  private stopTranscription: (() => void) | null = null;
 
   async start(locale: string): Promise<void> {
-    try {
-      await Voice.start(locale);
-    } catch (err) {
-      console.error("[VoiceSTT] start error:", err);
-    }
+    this.locale = toWhisperLang(locale);
   }
 
-  async stop(): Promise<void> {
+  async stop(audioUri?: string): Promise<void> {
+    if (!audioUri) {
+      this.onSessionEnd?.();
+      return;
+    }
+
     try {
-      await Voice.stop();
-    } catch (err) {
-      console.error("[VoiceSTT] stop error:", err);
+      // Ensure the Whisper model is downloaded and context is initialised.
+      if (!this.context) {
+        const modelPath = await WhisperModelManager.ensureModel();
+        this.context = await initWhisper({ filePath: modelPath });
+      }
+
+      // Normalise the URI – whisper.rn expects a "file://" prefixed path on iOS.
+      const uri = audioUri.startsWith("file://")
+        ? audioUri
+        : `file://${audioUri}`;
+
+      const { stop, promise } = this.context.transcribe(uri, {
+        language: this.locale,
+        maxLen: 1,
+        onNewSegments: (segments) => {
+          // Stream partial text back as the model produces segments.
+          const partial = segments.map((s) => s.text).join(" ").trim();
+          if (partial) this.onResult?.(partial, false);
+        },
+      });
+
+      this.stopTranscription = stop;
+      const { result } = await promise;
+      this.stopTranscription = null;
+
+      const text = result.trim();
+      if (text) {
+        this.onResult?.(text, true);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[WhisperSTT] transcription error:", msg);
+      this.onError?.(msg);
+    } finally {
+      this.onSessionEnd?.();
     }
   }
 
   async cancel(): Promise<void> {
-    try {
-      this.latestFinalText = ""; // discard buffered text — no commit on cancel
-      await Voice.cancel();
-    } catch (err) {
-      console.error("[VoiceSTT] cancel error:", err);
+    if (this.stopTranscription) {
+      this.stopTranscription();
+      this.stopTranscription = null;
     }
+    this.onSessionEnd?.();
   }
 
   async isAvailable(): Promise<boolean> {
-    try {
-      const services = await Voice.getSpeechRecognitionServices();
-      return (services?.length ?? 0) > 0;
-    } catch {
-      // On iOS, just assume it's available
-      return true;
-    }
+    return WhisperModelManager.isDownloaded();
   }
 
-  /** Clean up listeners on unmount. */
-  destroy(): void {
-    this.latestFinalText = "";
-    Voice.destroy().then(Voice.removeAllListeners);
+  /** Release the Whisper context and free native memory. */
+  async destroy(): Promise<void> {
+    this.stopTranscription?.();
+    this.stopTranscription = null;
+    if (this.context) {
+      await this.context.release();
+      this.context = null;
+    }
   }
 }
 
-// ─── Offline STT Stub (provider interface for future Vosk/Whisper) ──────────
+// ─── Offline stub (kept for the factory fallback) ────────────────────────────
 class OfflineSTTProvider implements STTProvider {
   onResult: ((text: string, isFinal: boolean) => void) | null = null;
   onError: ((error: string) => void) | null = null;
   onSessionEnd: (() => void) | null = null;
 
   async start(_locale: string): Promise<void> {
-    // Stub: would initialize local model here
-    this.onError?.(
-      "Offline STT not yet implemented. Enable cloud or use default Voice.",
-    );
+    this.onError?.("Offline STT not yet implemented.");
   }
-
-  async stop(): Promise<void> {
-    // no-op
-  }
-
-  async cancel(): Promise<void> {
-    // no-op
-  }
-
+  async stop(_audioUri?: string): Promise<void> {}
+  async cancel(): Promise<void> {}
   async isAvailable(): Promise<boolean> {
     return false;
   }
@@ -155,13 +138,13 @@ let provider: STTProvider | null = null;
 
 export function getSTTProvider(offline = false): STTProvider {
   if (provider) return provider;
-  provider = offline ? new OfflineSTTProvider() : new VoiceSTTProvider();
+  provider = offline ? new OfflineSTTProvider() : new WhisperSTTProvider();
   return provider;
 }
 
-export function destroySTTProvider(): void {
-  if (provider && provider instanceof VoiceSTTProvider) {
-    (provider as VoiceSTTProvider).destroy();
+export async function destroySTTProvider(): Promise<void> {
+  if (provider && provider instanceof WhisperSTTProvider) {
+    await provider.destroy();
   }
   provider = null;
 }
