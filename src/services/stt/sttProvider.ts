@@ -72,7 +72,10 @@ class WhisperSTTProvider implements STTProvider {
         maxLen: 1,
         onNewSegments: (segments) => {
           // Stream partial text back as the model produces segments.
-          const partial = segments.map((s) => s.text).join(" ").trim();
+          const partial = segments
+            .map((s) => s.text)
+            .join(" ")
+            .trim();
           if (partial) this.onResult?.(partial, false);
         },
       });
