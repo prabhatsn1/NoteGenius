@@ -123,7 +123,12 @@ export interface AppSettings {
 export type SegmentFilter = "all" | "voice" | "typed";
 
 // ─── Recording State ────────────────────────────────────────────────────────
-export type RecordingStatus = "idle" | "recording" | "paused" | "stopped";
+export type RecordingStatus =
+  | "idle"
+  | "recording"
+  | "paused"
+  | "transcribing"
+  | "stopped";
 
 // ─── Study Session ──────────────────────────────────────────────────────────
 export interface StudySession {
