@@ -2,7 +2,7 @@
  * NoteGenius – Settings Screen.
  * Profile, AI Provider (Offline / Gemini), Data export/import, Recording options, Clear data.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -53,6 +53,7 @@ export default function SettingsScreen() {
 
   const [name, setName] = useState(profile?.name ?? "");
   const [phone, setPhone] = useState(profile?.phone ?? "");
+  const phoneRef = useRef<import("react-native").TextInput>(null);
   const [apiKey, setApiKey] = useState("");
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<AIProvider | null>(
@@ -250,6 +251,10 @@ export default function SettingsScreen() {
               onChangeText={setName}
               placeholder="Your name"
               placeholderTextColor={colors.textMuted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
+              onSubmitEditing={() => phoneRef.current?.focus()}
               accessibilityLabel="Your name"
             />
           </View>
@@ -258,6 +263,7 @@ export default function SettingsScreen() {
               Phone
             </Text>
             <TextInput
+              ref={phoneRef}
               style={[
                 styles.input,
                 {
@@ -271,6 +277,9 @@ export default function SettingsScreen() {
               placeholder="Phone number"
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleSaveProfile}
               accessibilityLabel="Phone number"
             />
           </View>
