@@ -2,7 +2,7 @@
  * NoteGenius – Setup Screen (first launch).
  * Asks for Name + Phone number only. No login required.
  */
-import React, { useState } from 'react';
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,36 +12,46 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../constants/theme';
-import { useUserStore } from '../store/useUserStore';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  useThemeColors,
+  Spacing,
+  FontSize,
+  BorderRadius,
+} from "../constants/theme";
+import { useUserStore } from "../store/useUserStore";
 
 export default function SetupScreen() {
   const colors = useThemeColors();
   const { saveProfile } = useUserStore();
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const phoneRef = useRef<import("react-native").TextInput>(null);
 
   const handleContinue = () => {
     if (!name.trim()) {
-      Alert.alert('Required', 'Please enter your name to continue.');
+      Alert.alert("Required", "Please enter your name to continue.");
       return;
     }
     saveProfile({ name: name.trim(), phone: phone.trim() });
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
         <View style={styles.content}>
           {/* Logo / Title */}
           <View style={styles.logoContainer}>
             <Text style={styles.logoEmoji}>🧠</Text>
-            <Text style={[styles.appTitle, { color: colors.text }]}>NoteGenius</Text>
+            <Text style={[styles.appTitle, { color: colors.text }]}>
+              NoteGenius
+            </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
               Your offline-first voice notes assistant
             </Text>
@@ -54,38 +64,62 @@ export default function SetupScreen() {
 
           {/* Name input */}
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Your Name *</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Your Name *
+            </Text>
             <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+              style={[
+                styles.input,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                },
+              ]}
               value={name}
               onChangeText={setName}
               placeholder="e.g., John Doe"
               placeholderTextColor={colors.textMuted}
               autoFocus
               autoCapitalize="words"
+              autoCorrect={false}
               returnKeyType="next"
+              onSubmitEditing={() => phoneRef.current?.focus()}
               accessibilityLabel="Enter your name"
             />
           </View>
 
           {/* Phone input */}
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Phone Number</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Phone Number
+            </Text>
             <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+              ref={phoneRef}
+              style={[
+                styles.input,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                },
+              ]}
               value={phone}
               onChangeText={setPhone}
               placeholder="e.g., +1 555-0100"
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
+              autoCorrect={false}
               returnKeyType="done"
+              onSubmitEditing={handleContinue}
               accessibilityLabel="Enter your phone number"
             />
           </View>
 
           {/* Privacy note */}
           <Text style={[styles.privacyNote, { color: colors.textMuted }]}>
-            🔒 Everything stays on your device. No account, no cloud – just you and your notes.
+            🔒 Everything stays on your device. No account, no cloud – just you
+            and your notes.
           </Text>
 
           {/* Continue button */}
@@ -113,10 +147,10 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: Spacing.xl,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   logoContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: Spacing.xl,
   },
   logoEmoji: {
@@ -125,7 +159,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     fontSize: FontSize.title,
-    fontWeight: '800',
+    fontWeight: "800",
   },
   subtitle: {
     fontSize: FontSize.md,
@@ -133,8 +167,8 @@ const styles = StyleSheet.create({
   },
   welcome: {
     fontSize: FontSize.lg,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
     marginBottom: Spacing.xl,
   },
   fieldGroup: {
@@ -142,9 +176,9 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: FontSize.sm,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: Spacing.xs,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   input: {
@@ -156,18 +190,18 @@ const styles = StyleSheet.create({
   },
   privacyNote: {
     fontSize: FontSize.sm,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: Spacing.xl,
     lineHeight: 18,
   },
   continueButton: {
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
-    alignItems: 'center',
+    alignItems: "center",
   },
   continueText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: "#FFFFFF",
+    fontWeight: "700",
     fontSize: FontSize.lg,
   },
 });
