@@ -25,6 +25,11 @@ import {
 import { SettingsRepo } from "../data/repos/SettingsRepo";
 import { ExportService } from "../services/export/exportService";
 import { validateGeminiApiKey } from "../services/ai/gemini/GeminiProvider";
+import {
+  validateHuggingFaceApiKey,
+  HF_PRIMARY_MODEL,
+  HF_FALLBACK_MODEL,
+} from "../services/ai/huggingface/HuggingFaceProvider";
 import { useSettingsStore } from "../store/useSettingsStore";
 import { useUserStore } from "../store/useUserStore";
 import type { AIProvider } from "../types/models";
@@ -36,6 +41,17 @@ const PRIVACY_NOTICE =
   "to Google's Gemini API for summarization and flashcard generation. " +
   "No audio files, profile data, or phone number are ever transmitted. " +
   "Your Gemini API key is stored encrypted on-device using the system keychain " +
+  "(expo-secure-store) and is never synced to any server. " +
+  "You can switch back to Offline processing at any time — all previously " +
+  "generated summaries and flashcards remain stored locally.";
+
+const HF_PRIVACY_NOTICE =
+  "When Hugging Face is selected, only the transcript text of each note is sent " +
+  "to the Hugging Face Inference API for summarization and flashcard generation. " +
+  `Primary model: ${HF_PRIMARY_MODEL}. ` +
+  `Fallback model (used automatically when the primary is rate-limited): ${HF_FALLBACK_MODEL}. ` +
+  "No audio files, profile data, or phone number are ever transmitted. " +
+  "Your Hugging Face API token is stored encrypted on-device using the system keychain " +
   "(expo-secure-store) and is never synced to any server. " +
   "You can switch back to Offline processing at any time — all previously " +
   "generated summaries and flashcards remain stored locally.";
@@ -58,28 +74,26 @@ function getGeminiErrorHelp(error: string): GeminiErrorHelp {
     msg.includes("invalid_api_key")
   ) {
     return {
-      cause: "The API key you entered doesn't match any active key in your Google account.",
+      cause:
+        "The API key you entered doesn't match any active key in your Google account.",
       steps: [
         "Open Google AI Studio → aistudio.google.com",
         "Sign in with your Google account.",
-        "Tap \"Get API key\" in the left sidebar.",
-        "Click \"Create API key\" and copy the new key.",
+        'Tap "Get API key" in the left sidebar.',
+        'Click "Create API key" and copy the new key.',
         "Paste it here and tap Save Key Securely.",
       ],
-      tip: "Make sure you copied the entire key — they start with \"AIza\".",
+      tip: 'Make sure you copied the entire key — they start with "AIza".',
     };
   }
 
-  if (
-    msg.includes("api_key_expired") ||
-    msg.includes("key expired")
-  ) {
+  if (msg.includes("api_key_expired") || msg.includes("key expired")) {
     return {
       cause: "Your API key has expired.",
       steps: [
         "Open Google AI Studio → aistudio.google.com",
-        "Go to \"Get API key\" in the left sidebar.",
-        "Delete the old key, then click \"Create API key\".",
+        'Go to "Get API key" in the left sidebar.',
+        'Delete the old key, then click "Create API key".',
         "Copy the new key and paste it here.",
       ],
     };
@@ -108,11 +122,12 @@ function getGeminiErrorHelp(error: string): GeminiErrorHelp {
     msg.includes("not enabled")
   ) {
     return {
-      cause: "The Generative Language API is not enabled for this key's project.",
+      cause:
+        "The Generative Language API is not enabled for this key's project.",
       steps: [
         "Open console.cloud.google.com and select your project.",
-        "Go to \"APIs & Services\" → \"Enable APIs & Services\".",
-        "Search for \"Generative Language API\" and click Enable.",
+        'Go to "APIs & Services" → "Enable APIs & Services".',
+        'Search for "Generative Language API" and click Enable.',
         "Wait 1–2 minutes for the change to propagate, then try again.",
       ],
     };
@@ -147,6 +162,92 @@ function getGeminiErrorHelp(error: string): GeminiErrorHelp {
   };
 }
 
+// ─── HuggingFace key error help ──────────────────────────────────────────────
+
+function getHuggingFaceErrorHelp(error: string): GeminiErrorHelp {
+  const msg = error.toLowerCase();
+
+  if (
+    msg.includes("invalid") ||
+    msg.includes("unauthorized") ||
+    msg.includes("401") ||
+    msg.includes("403") ||
+    msg.includes("revoked")
+  ) {
+    return {
+      cause: "The API token you entered is invalid or has been revoked.",
+      steps: [
+        "Open huggingface.co and sign in to your account.",
+        "Go to Settings → Access Tokens.",
+        'Click "New token", set role to "Read", and copy it.',
+        "Paste it here and tap Save Token Securely.",
+      ],
+      tip: 'Hugging Face tokens start with "hf_".',
+    };
+  }
+
+  if (
+    msg.includes("rate") ||
+    msg.includes("429") ||
+    msg.includes("quota") ||
+    msg.includes("too many")
+  ) {
+    return {
+      cause:
+        "You have exceeded the free-tier rate limit for Hugging Face inference.",
+      steps: [
+        "Wait a few minutes and tap Test again — free-tier resets quickly.",
+        "Consider subscribing to the Hugging Face PRO plan for higher quotas.",
+        "Visit huggingface.co/pricing for details.",
+      ],
+      tip: `Both models (${HF_PRIMARY_MODEL} and ${HF_FALLBACK_MODEL}) will be tried automatically before showing this error.`,
+    };
+  }
+
+  if (
+    msg.includes("503") ||
+    msg.includes("loading") ||
+    msg.includes("unavailable")
+  ) {
+    return {
+      cause: "The model is currently loading on the Hugging Face servers.",
+      steps: [
+        "Wait 20–30 seconds for the model to warm up, then tap Test again.",
+        "The fallback model will be tried automatically if the primary is unavailable.",
+      ],
+      tip: "Free-tier models are loaded on demand and may take a moment to start.",
+    };
+  }
+
+  if (
+    msg.includes("network") ||
+    msg.includes("fetch") ||
+    msg.includes("timeout") ||
+    msg.includes("connection")
+  ) {
+    return {
+      cause:
+        "Could not reach the Hugging Face API — this is likely a network issue.",
+      steps: [
+        "Check that your device has an active internet connection.",
+        "Try switching between Wi-Fi and mobile data.",
+        "If you're behind a VPN or proxy, try disabling it temporarily.",
+        "Retry once connectivity is restored.",
+      ],
+    };
+  }
+
+  return {
+    cause: "The Hugging Face API returned an unexpected error.",
+    steps: [
+      "Double-check your token at huggingface.co → Settings → Access Tokens.",
+      "Delete and recreate the token if it looks correct but still fails.",
+      "Make sure your account has access to the Inference API.",
+      "If the problem persists, check status.huggingface.co for outages.",
+    ],
+  };
+}
+
 export default function SettingsScreen() {
   const colors = useThemeColors();
   const {
@@ -154,10 +255,17 @@ export default function SettingsScreen() {
     saveProfile,
     setGeminiApiKey,
     deleteGeminiApiKey,
+    setHuggingFaceApiKey,
+    deleteHuggingFaceApiKey,
     setAIProvider: setUserAIProvider,
   } = useUserStore();
-  const { settings, updateSettings, setAIProvider, acknowledgeGeminiPrivacy } =
-    useSettingsStore();
+  const {
+    settings,
+    updateSettings,
+    setAIProvider,
+    acknowledgeGeminiPrivacy,
+    acknowledgeHuggingFacePrivacy,
+  } = useSettingsStore();
 
   const [name, setName] = useState(profile?.name ?? "");
   const [phone, setPhone] = useState(profile?.phone ?? "");
@@ -174,6 +282,14 @@ export default function SettingsScreen() {
 
   // Load existing API key indicator (don't show actual key)
   const hasApiKey = Boolean(profile?.geminiApiKey);
+
+  // ─── Hugging Face API key state ───────────────────────────────────────
+  const [hfApiKey, setHfApiKey] = useState("");
+  const [isSavingHfKey, setIsSavingHfKey] = useState(false);
+  const [hfKeyValidationError, setHfKeyValidationError] = useState<
+    string | null
+  >(null);
+  const hasHfApiKey = Boolean(profile?.huggingfaceApiKey);
 
   // ─── Gemini connection status ────────────────────────────────────────
   type GeminiStatus = "idle" | "checking" | "connected" | "error";
@@ -218,6 +334,57 @@ export default function SettingsScreen() {
     }
   }, [settings.aiProvider, hasApiKey]);
 
+  // ─── Hugging Face connection status ──────────────────────────────────
+  type HFStatus = "idle" | "checking" | "connected" | "error";
+  const [hfStatus, setHfStatus] = useState<HFStatus>("idle");
+  const [hfError, setHfError] = useState<string | null>(null);
+
+  const checkHuggingFaceConnection = useCallback(async () => {
+    const key = profile?.huggingfaceApiKey;
+    if (!key) return;
+    setHfStatus("checking");
+    setHfError(null);
+    try {
+      const res = await fetch(
+        "https://api-inference.huggingface.co/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model: HF_PRIMARY_MODEL,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+            stream: false,
+          }),
+        },
+      );
+      // 200 = success, 429 = rate limited but key valid, 503 = model loading but key valid
+      if (res.ok || res.status === 429 || res.status === 503) {
+        setHfStatus("connected");
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setHfStatus("error");
+        setHfError(body?.error ?? `HTTP ${res.status}`);
+      }
+    } catch (e: unknown) {
+      setHfStatus("error");
+      setHfError(e instanceof Error ? e.message : "Network error");
+    }
+  }, [profile?.huggingfaceApiKey]);
+
+  // Auto-check when HuggingFace is selected and key exists
+  useEffect(() => {
+    if (settings.aiProvider === "huggingface" && hasHfApiKey) {
+      checkHuggingFaceConnection();
+    } else {
+      setHfStatus("idle");
+      setHfError(null);
+    }
+  }, [settings.aiProvider, hasHfApiKey]);
+
   // ─── Save Profile ─────────────────────────────────────────────────────
   const handleSaveProfile = useCallback(() => {
     if (!name.trim()) {
@@ -237,14 +404,30 @@ export default function SettingsScreen() {
         setShowPrivacyModal(true);
         return;
       }
+      if (
+        provider === "huggingface" &&
+        !settings.huggingfacePrivacyAcknowledged
+      ) {
+        // Show one-time privacy modal
+        setPendingProvider(provider);
+        setShowPrivacyModal(true);
+        return;
+      }
       setAIProvider(provider);
       setUserAIProvider(provider);
     },
-    [settings.geminiPrivacyAcknowledged],
+    [
+      settings.geminiPrivacyAcknowledged,
+      settings.huggingfacePrivacyAcknowledged,
+    ],
   );
 
   const handleAcceptPrivacy = useCallback(() => {
-    acknowledgeGeminiPrivacy();
+    if (pendingProvider === "gemini") {
+      acknowledgeGeminiPrivacy();
+    } else if (pendingProvider === "huggingface") {
+      acknowledgeHuggingFacePrivacy();
+    }
     if (pendingProvider) {
       setAIProvider(pendingProvider);
       setUserAIProvider(pendingProvider);
@@ -301,6 +484,58 @@ export default function SettingsScreen() {
             setAIProvider("offline");
             setUserAIProvider("offline");
             Alert.alert("Removed", "API key deleted. Provider set to Offline.");
+          },
+        },
+      ],
+    );
+  }, []);
+
+  // ─── Save / Delete HuggingFace API Token ─────────────────────────────
+  const handleSaveHfApiKey = useCallback(async () => {
+    const trimmed = hfApiKey.trim();
+    if (!trimmed) {
+      Alert.alert("Required", "Please enter your Hugging Face API token.");
+      return;
+    }
+    setHfKeyValidationError(null);
+    setIsSavingHfKey(true);
+    try {
+      const result = await validateHuggingFaceApiKey(trimmed);
+      if (!result.valid) {
+        setHfKeyValidationError(
+          result.error ?? "The token was rejected by the Hugging Face API.",
+        );
+        return;
+      }
+      await setHuggingFaceApiKey(trimmed);
+      setHfApiKey("");
+      setHfKeyValidationError(null);
+      Alert.alert(
+        "Saved",
+        "Hugging Face API token verified and stored securely on device.",
+      );
+    } finally {
+      setIsSavingHfKey(false);
+    }
+  }, [hfApiKey]);
+
+  const handleDeleteHfApiKey = useCallback(async () => {
+    Alert.alert(
+      "Remove API Token",
+      "Are you sure you want to remove your Hugging Face API token? The provider will fall back to Offline.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            await deleteHuggingFaceApiKey();
+            setAIProvider("offline");
+            setUserAIProvider("offline");
+            Alert.alert(
+              "Removed",
+              "API token deleted. Provider set to Offline.",
+            );
           },
         },
       ],
@@ -428,37 +663,43 @@ export default function SettingsScreen() {
               Provider
             </Text>
             <View style={styles.providerButtons}>
-              {(["offline", "gemini"] as AIProvider[]).map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={[
-                    styles.providerButton,
-                    {
-                      backgroundColor:
-                        settings.aiProvider === p
-                          ? colors.primary
-                          : colors.surfaceVariant,
-                      borderColor:
-                        settings.aiProvider === p
-                          ? colors.primary
-                          : colors.border,
-                    },
-                  ]}
-                  onPress={() => handleProviderChange(p)}
-                  accessibilityLabel={`Select ${p} provider`}
-                >
-                  <Text
-                    style={{
-                      color:
-                        settings.aiProvider === p ? "#FFFFFF" : colors.text,
-                      fontWeight: "600",
-                      fontSize: FontSize.sm,
-                    }}
+              {(["offline", "gemini", "huggingface"] as AIProvider[]).map(
+                (p) => (
+                  <TouchableOpacity
+                    key={p}
+                    style={[
+                      styles.providerButton,
+                      {
+                        backgroundColor:
+                          settings.aiProvider === p
+                            ? colors.primary
+                            : colors.surfaceVariant,
+                        borderColor:
+                          settings.aiProvider === p
+                            ? colors.primary
+                            : colors.border,
+                      },
+                    ]}
+                    onPress={() => handleProviderChange(p)}
+                    accessibilityLabel={`Select ${p} provider`}
                   >
-                    {p === "offline" ? "📱 Offline" : "✨ Gemini"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={{
+                        color:
+                          settings.aiProvider === p ? "#FFFFFF" : colors.text,
+                        fontWeight: "600",
+                        fontSize: FontSize.sm,
+                      }}
+                    >
+                      {p === "offline"
+                        ? "📱 Offline"
+                        : p === "gemini"
+                          ? "✨ Gemini"
+                          : "🤗 HuggingFace"}
+                    </Text>
+                  </TouchableOpacity>
+                ),
+              )}
             </View>
           </View>
 
@@ -562,78 +803,80 @@ export default function SettingsScreen() {
                   </View>
 
                   {/* Inline help for saved-key connection errors */}
-                  {geminiStatus === "error" && geminiError ? (() => {
-                    const help = getGeminiErrorHelp(geminiError);
-                    return (
-                      <View
-                        style={[
-                          styles.keyHelpBox,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.danger,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.keyHelpHeader,
-                            { color: colors.danger },
-                          ]}
-                        >
-                          ⚠️ Connection failed
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpCause,
-                            { color: colors.text },
-                          ]}
-                        >
-                          {help.cause}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpStepsTitle,
-                            { color: colors.text },
-                          ]}
-                        >
-                          How to fix:
-                        </Text>
-                        {help.steps.map((step, i) => (
-                          <View key={i} style={styles.keyHelpStepRow}>
-                            <Text
-                              style={[
-                                styles.keyHelpStepNum,
-                                { color: colors.primary },
-                              ]}
-                            >
-                              {i + 1}.
-                            </Text>
-                            <Text
-                              style={[
-                                styles.keyHelpStepText,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {step}
-                            </Text>
-                          </View>
-                        ))}
-                        {help.tip ? (
-                          <Text
+                  {geminiStatus === "error" && geminiError
+                    ? (() => {
+                        const help = getGeminiErrorHelp(geminiError);
+                        return (
+                          <View
                             style={[
-                              styles.keyHelpTip,
+                              styles.keyHelpBox,
                               {
-                                color: colors.textSecondary,
-                                borderColor: colors.border,
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
                               },
                             ]}
                           >
-                            💡 {help.tip}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })() : null}
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Connection failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
                 </>
               ) : (
                 <>
@@ -681,86 +924,411 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
 
                   {/* Inline validation error + help */}
-                  {keyValidationError ? (() => {
-                    const help = getGeminiErrorHelp(keyValidationError);
-                    return (
-                      <View
-                        style={[
-                          styles.keyHelpBox,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.danger,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.keyHelpHeader,
-                            { color: colors.danger },
-                          ]}
-                        >
-                          ⚠️ Key verification failed
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpError,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          {keyValidationError}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpCause,
-                            { color: colors.text },
-                          ]}
-                        >
-                          {help.cause}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpStepsTitle,
-                            { color: colors.text },
-                          ]}
-                        >
-                          How to fix:
-                        </Text>
-                        {help.steps.map((step, i) => (
-                          <View key={i} style={styles.keyHelpStepRow}>
-                            <Text
-                              style={[
-                                styles.keyHelpStepNum,
-                                { color: colors.primary },
-                              ]}
-                            >
-                              {i + 1}.
-                            </Text>
-                            <Text
-                              style={[
-                                styles.keyHelpStepText,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {step}
-                            </Text>
-                          </View>
-                        ))}
-                        {help.tip ? (
-                          <Text
+                  {keyValidationError
+                    ? (() => {
+                        const help = getGeminiErrorHelp(keyValidationError);
+                        return (
+                          <View
                             style={[
-                              styles.keyHelpTip,
+                              styles.keyHelpBox,
                               {
-                                color: colors.textSecondary,
-                                borderColor: colors.border,
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
                               },
                             ]}
                           >
-                            💡 {help.tip}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })() : null}
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Key verification failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpError,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {keyValidationError}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
+                </>
+              )}
+            </View>
+          )}
+
+          {/* ── Hugging Face API Token section ── */}
+          {settings.aiProvider === "huggingface" && (
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Hugging Face API Token
+              </Text>
+              <Text
+                style={[
+                  {
+                    color: colors.textMuted,
+                    fontSize: FontSize.xs,
+                    marginBottom: Spacing.xs,
+                  },
+                ]}
+              >
+                Primary: {HF_PRIMARY_MODEL}
+                {"\n"}
+                Fallback (auto on rate-limit): {HF_FALLBACK_MODEL}
+              </Text>
+              {hasHfApiKey ? (
+                <>
+                  <View style={styles.apiKeyRow}>
+                    <Text style={[styles.apiKeyStatus, { color: colors.text }]}>
+                      ✅ Token stored securely
+                    </Text>
+                    <TouchableOpacity onPress={handleDeleteHfApiKey}>
+                      <Text
+                        style={{
+                          color: colors.danger,
+                          fontWeight: "600",
+                          fontSize: FontSize.sm,
+                        }}
+                      >
+                        Remove
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Connection indicator */}
+                  <View
+                    style={[
+                      styles.connectionRow,
+                      {
+                        backgroundColor: colors.surfaceVariant,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    {hfStatus === "checking" ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.primary}
+                        style={styles.statusDot}
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.statusDot,
+                          {
+                            backgroundColor:
+                              hfStatus === "connected"
+                                ? "#22c55e"
+                                : hfStatus === "error"
+                                  ? "#ef4444"
+                                  : colors.textMuted,
+                          },
+                        ]}
+                      />
+                    )}
+                    <View style={styles.connectionTextBox}>
+                      <Text
+                        style={[styles.connectionLabel, { color: colors.text }]}
+                      >
+                        {hfStatus === "checking"
+                          ? "Checking connection…"
+                          : hfStatus === "connected"
+                            ? "Connected to Hugging Face"
+                            : hfStatus === "error"
+                              ? "Connection failed"
+                              : "Not checked"}
+                      </Text>
+                      {hfStatus === "error" && hfError ? (
+                        <Text
+                          style={[
+                            styles.connectionError,
+                            { color: colors.danger },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {hfError}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <TouchableOpacity
+                      onPress={checkHuggingFaceConnection}
+                      disabled={hfStatus === "checking"}
+                      style={[
+                        styles.retestButton,
+                        { borderColor: colors.border },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: colors.primary,
+                          fontSize: FontSize.xs,
+                          fontWeight: "600",
+                        }}
+                      >
+                        Test
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Inline help for saved-key connection errors */}
+                  {hfStatus === "error" && hfError
+                    ? (() => {
+                        const help = getHuggingFaceErrorHelp(hfError);
+                        return (
+                          <View
+                            style={[
+                              styles.keyHelpBox,
+                              {
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Connection failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        color: colors.text,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                    value={hfApiKey}
+                    onChangeText={(v) => {
+                      setHfApiKey(v);
+                      if (hfKeyValidationError) setHfKeyValidationError(null);
+                    }}
+                    placeholder="Paste your Hugging Face token (hf_…)"
+                    placeholderTextColor={colors.textMuted}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    accessibilityLabel="Hugging Face API token"
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.button,
+                      {
+                        backgroundColor: isSavingHfKey
+                          ? colors.surfaceVariant
+                          : colors.primary,
+                        marginTop: Spacing.sm,
+                        opacity: isSavingHfKey ? 0.7 : 1,
+                      },
+                    ]}
+                    onPress={handleSaveHfApiKey}
+                    disabled={isSavingHfKey}
+                    accessibilityLabel="Save HuggingFace API token"
+                  >
+                    {isSavingHfKey ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.buttonText}>Save Token Securely</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Inline validation error + help */}
+                  {hfKeyValidationError
+                    ? (() => {
+                        const help =
+                          getHuggingFaceErrorHelp(hfKeyValidationError);
+                        return (
+                          <View
+                            style={[
+                              styles.keyHelpBox,
+                              {
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Token verification failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpError,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {hfKeyValidationError}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
                 </>
               )}
             </View>
@@ -780,7 +1348,9 @@ export default function SettingsScreen() {
               🔒 Privacy
             </Text>
             <Text style={[styles.privacyText, { color: colors.textSecondary }]}>
-              {PRIVACY_NOTICE}
+              {settings.aiProvider === "huggingface"
+                ? HF_PRIVACY_NOTICE
+                : PRIVACY_NOTICE}
             </Text>
           </View>
         </Section>
@@ -842,7 +1412,7 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
-      {/* ─── One-time Gemini privacy consent modal ──────────────────────── */}
+      {/* ─── One-time AI provider privacy consent modal ──────────────────── */}
       <Modal
         visible={showPrivacyModal}
         transparent
@@ -854,11 +1424,15 @@ export default function SettingsScreen() {
             style={[styles.modalContent, { backgroundColor: colors.surface }]}
           >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
-              ✨ Enable Gemini AI
+              {pendingProvider === "huggingface"
+                ? "🤗 Enable Hugging Face AI"
+                : "✨ Enable Gemini AI"}
             </Text>
             <ScrollView style={styles.modalScroll}>
               <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
-                {PRIVACY_NOTICE}
+                {pendingProvider === "huggingface"
+                  ? HF_PRIVACY_NOTICE
+                  : PRIVACY_NOTICE}
               </Text>
             </ScrollView>
             <View style={styles.modalActions}>

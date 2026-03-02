@@ -29,6 +29,21 @@ describe("makeAiProvider", () => {
     expect(provider.label).toBe("Gemini (cloud)");
   });
 
+  it("returns OfflineProvider when provider is 'huggingface' but no API token", () => {
+    const consoleSpy = jest.spyOn(console, "warn").mockImplementation();
+    const provider = makeAiProvider("huggingface");
+    expect(provider.label).toBe("Offline (on-device)");
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("no API token"),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it("returns HuggingFaceProvider when provider is 'huggingface' with API token", () => {
+    const provider = makeAiProvider("huggingface", "hf_test-token-123");
+    expect(provider.label).toBe("Hugging Face (cloud)");
+  });
+
   it("returns a provider with summarize and generateFlashcards methods", () => {
     const provider = makeAiProvider("offline");
     expect(typeof provider.summarize).toBe("function");

@@ -95,10 +95,12 @@ export interface UserProfile {
   aiProvider: AIProvider;
   /** Gemini API key (stored in expo-secure-store, NOT in MMKV) */
   geminiApiKey?: string;
+  /** Hugging Face API key (stored in expo-secure-store, NOT in MMKV) */
+  huggingfaceApiKey?: string;
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
-export type AIProvider = "offline" | "gemini";
+export type AIProvider = "offline" | "gemini" | "huggingface";
 
 /**
  * Gemini model identifier string as returned by the
@@ -117,6 +119,8 @@ export interface AppSettings {
   setupComplete: boolean;
   /** Whether the user has acknowledged the Gemini privacy notice */
   geminiPrivacyAcknowledged: boolean;
+  /** Whether the user has acknowledged the Hugging Face privacy notice */
+  huggingfacePrivacyAcknowledged: boolean;
 }
 
 // ─── Segment Filter ─────────────────────────────────────────────────────────

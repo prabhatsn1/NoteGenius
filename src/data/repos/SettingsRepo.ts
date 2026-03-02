@@ -16,6 +16,7 @@ const KEYS = {
 
 const SECURE_KEYS = {
   GEMINI_API_KEY: "notegenius.geminiApiKey",
+  HUGGINGFACE_API_KEY: "notegenius.huggingfaceApiKey",
 } as const;
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   silenceTrimming: false,
   setupComplete: false,
   geminiPrivacyAcknowledged: false,
+  huggingfacePrivacyAcknowledged: false,
 };
 
 export const SettingsRepo = {
@@ -83,6 +85,9 @@ export const SettingsRepo = {
   clearAll(): void {
     storage.clearAll();
     SecureStore.deleteItemAsync(SECURE_KEYS.GEMINI_API_KEY).catch(() => {});
+    SecureStore.deleteItemAsync(SECURE_KEYS.HUGGINGFACE_API_KEY).catch(
+      () => {},
+    );
   },
 
   // ─── Gemini API Key (Secure Store) ────────────────────────────────────
@@ -96,5 +101,18 @@ export const SettingsRepo = {
 
   async deleteGeminiApiKey(): Promise<void> {
     await SecureStore.deleteItemAsync(SECURE_KEYS.GEMINI_API_KEY);
+  },
+
+  // ─── Hugging Face API Key (Secure Store) ───────────────────────────────
+  async getHuggingFaceApiKey(): Promise<string | null> {
+    return SecureStore.getItemAsync(SECURE_KEYS.HUGGINGFACE_API_KEY);
+  },
+
+  async setHuggingFaceApiKey(key: string): Promise<void> {
+    await SecureStore.setItemAsync(SECURE_KEYS.HUGGINGFACE_API_KEY, key);
+  },
+
+  async deleteHuggingFaceApiKey(): Promise<void> {
+    await SecureStore.deleteItemAsync(SECURE_KEYS.HUGGINGFACE_API_KEY);
   },
 };

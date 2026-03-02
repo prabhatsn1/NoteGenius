@@ -1,7 +1,7 @@
 /**
  * NoteGenius – User store (Zustand).
  * Manages the minimal user profile (name + phone + AI provider prefs).
- * Gemini API key is hydrated from expo-secure-store at load time.
+ * Gemini and Hugging Face API keys are hydrated from expo-secure-store at load time.
  */
 import { create } from "zustand";
 import { SettingsRepo } from "../data/repos/SettingsRepo";
@@ -12,10 +12,15 @@ interface UserState {
   isSetupComplete: boolean;
   loadProfile: () => Promise<void>;
   saveProfile: (
-    profile: Omit<UserProfile, "aiProvider" | "geminiApiKey">,
+    profile: Omit<
+      UserProfile,
+      "aiProvider" | "geminiApiKey" | "huggingfaceApiKey"
+    >,
   ) => void;
   setGeminiApiKey: (key: string) => Promise<void>;
   deleteGeminiApiKey: () => Promise<void>;
+  setHuggingFaceApiKey: (key: string) => Promise<void>;
+  deleteHuggingFaceApiKey: () => Promise<void>;
   setAIProvider: (provider: AIProvider) => void;
 }
 
@@ -27,17 +32,24 @@ export const useUserStore = create<UserState>((set, get) => ({
     const stored = SettingsRepo.getUserProfile();
     const isSetupComplete = SettingsRepo.isSetupComplete();
 
-    // Hydrate geminiApiKey from secure store
+    // Hydrate API keys from secure store
     let geminiApiKey: string | undefined;
+    let huggingfaceApiKey: string | undefined;
     try {
-      const key = await SettingsRepo.getGeminiApiKey();
-      if (key) geminiApiKey = key;
+      const gKey = await SettingsRepo.getGeminiApiKey();
+      if (gKey) geminiApiKey = gKey;
+    } catch {
+      // Secure store may not be available in all environments
+    }
+    try {
+      const hKey = await SettingsRepo.getHuggingFaceApiKey();
+      if (hKey) huggingfaceApiKey = hKey;
     } catch {
       // Secure store may not be available in all environments
     }
 
     const profile: UserProfile | null = stored
-      ? { ...stored, geminiApiKey }
+      ? { ...stored, geminiApiKey, huggingfaceApiKey }
       : null;
 
     set({ profile, isSetupComplete });
@@ -50,9 +62,15 @@ export const useUserStore = create<UserState>((set, get) => ({
       phone: data.phone,
       aiProvider: current?.aiProvider ?? "offline",
       geminiApiKey: current?.geminiApiKey,
+      huggingfaceApiKey: current?.huggingfaceApiKey,
     };
-    // Don't persist geminiApiKey to MMKV – it's in secure store
-    const { geminiApiKey: _key, ...mmkvProfile } = profile;
+    // Don't persist API keys to MMKV – they live in secure store
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const {
+      geminiApiKey: _gk,
+      huggingfaceApiKey: _hk,
+      ...mmkvProfile
+    } = profile;
     SettingsRepo.setUserProfile(mmkvProfile as UserProfile);
     SettingsRepo.completeSetup();
     set({ profile, isSetupComplete: true });
@@ -74,11 +92,32 @@ export const useUserStore = create<UserState>((set, get) => ({
     }
   },
 
+  setHuggingFaceApiKey: async (key: string) => {
+    await SettingsRepo.setHuggingFaceApiKey(key);
+    const current = get().profile;
+    if (current) {
+      set({ profile: { ...current, huggingfaceApiKey: key } });
+    }
+  },
+
+  deleteHuggingFaceApiKey: async () => {
+    await SettingsRepo.deleteHuggingFaceApiKey();
+    const current = get().profile;
+    if (current) {
+      set({ profile: { ...current, huggingfaceApiKey: undefined } });
+    }
+  },
+
   setAIProvider: (provider: AIProvider) => {
     const current = get().profile;
     if (current) {
       const updated = { ...current, aiProvider: provider };
-      const { geminiApiKey: _key, ...mmkvProfile } = updated;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const {
+        geminiApiKey: _gk,
+        huggingfaceApiKey: _hk,
+        ...mmkvProfile
+      } = updated;
       SettingsRepo.setUserProfile(mmkvProfile as UserProfile);
       set({ profile: updated });
     }
