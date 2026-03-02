@@ -13,6 +13,7 @@ interface SettingsState {
   setAIProvider: (provider: AIProvider) => void;
   setGeminiModel: (model: GeminiModel) => void;
   acknowledgeGeminiPrivacy: () => void;
+  acknowledgeHuggingFacePrivacy: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -37,5 +38,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   acknowledgeGeminiPrivacy: () => {
     get().updateSettings({ geminiPrivacyAcknowledged: true });
+  },
+
+  acknowledgeHuggingFacePrivacy: () => {
+    get().updateSettings({ huggingfacePrivacyAcknowledged: true });
   },
 }));
