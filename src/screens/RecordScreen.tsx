@@ -68,6 +68,8 @@ export default function RecordScreen() {
   const lastCommittedTextRef = useRef<string>("");
   // Mirror of the languageCode state — safe to read inside async callbacks/refs.
   const languageCodeRef = useRef<string>("en-US");
+  // Mirror of noteId — lets the STT onResult closure survive pause/resume cycles.
+  const noteIdRef = useRef<string | null>(null);
 
   const {
     status,
@@ -116,6 +118,35 @@ export default function RecordScreen() {
     meteringRef.current = null;
   };
 
+  // ─── STT session setup ─────────────────────────────────────────────────
+  // Extracted so it can be called on initial start AND after resume.
+  const startSTT = useCallback(async () => {
+    const stt = getSTTProvider();
+    stt.onResult = (text, isFinal) => {
+      setLiveTranscript(text);
+      if (isFinal && text.trim()) {
+        const elapsed =
+          Date.now() - startTimeRef.current - pausedDurationRef.current;
+        const currentNoteId = noteIdRef.current;
+        if (!currentNoteId) return;
+        const seg: NoteSegment = {
+          id: generateId(),
+          noteId: currentNoteId,
+          source: "voice",
+          text: normalizeTranscript(text.trim()),
+          startMs: 0,
+          endMs: elapsed,
+        };
+        addSessionSegment(seg);
+        setLiveTranscript("");
+      }
+    };
+    stt.onError = (err) => {
+      console.warn("[STT Error]", err);
+    };
+    await stt.start(languageCodeRef.current);
+  }, [addSessionSegment]);
+
   // ─── Start Recording ──────────────────────────────────────────────────
   const handleStart = useCallback(async () => {
     const hasPermission = await Permissions.requestMicrophone();
@@ -132,32 +163,11 @@ export default function RecordScreen() {
       return;
     }
 
-    // Initialise Whisper STT (stores locale; actual transcription runs at stop).
+    // Start live speech recognition (partial results arrive during recording;
+    // final results are committed as segments when each utterance completes).
     lastCommittedTextRef.current = "";
-    const stt = getSTTProvider();
-
-    // Called once when Whisper finishes transcribing the audio file.
-    stt.onResult = (text, isFinal) => {
-      setLiveTranscript(text);
-      if (isFinal && text.trim()) {
-        const elapsed =
-          Date.now() - startTimeRef.current - pausedDurationRef.current;
-        const seg: NoteSegment = {
-          id: generateId(),
-          noteId: note.id,
-          source: "voice",
-          text: normalizeTranscript(text.trim()),
-          startMs: 0,
-          endMs: elapsed,
-        };
-        addSessionSegment(seg);
-        setLiveTranscript("");
-      }
-    };
-    stt.onError = (err) => {
-      console.warn("[STT Error]", err);
-    };
-    await stt.start(languageCode);
+    noteIdRef.current = note.id;
+    await startSTT();
 
     // Start timer
     startTimeRef.current = Date.now();
@@ -184,11 +194,14 @@ export default function RecordScreen() {
     }, AUTOSAVE_INTERVAL);
 
     setStatus("recording");
-  }, [languageCode]);
+  }, [languageCode, startSTT]);
 
   // ─── Pause Recording ──────────────────────────────────────────────────
   const handlePause = useCallback(async () => {
-    // Pause audio capture; Whisper will transcribe the full file on stop.
+    // Cancel the STT session – iOS kills the audio session during pause
+    // anyway, and a stale session will not produce results on resume.
+    const stt = getSTTProvider();
+    await stt.cancel();
     await AudioRecorder.pause();
     pauseStartRef.current = Date.now();
     if (timerRef.current) clearInterval(timerRef.current);
@@ -198,8 +211,10 @@ export default function RecordScreen() {
 
   // ─── Resume Recording ─────────────────────────────────────────────────
   const handleResume = useCallback(async () => {
-    await AudioRecorder.resume();
     pausedDurationRef.current += Date.now() - pauseStartRef.current;
+    await AudioRecorder.resume();
+    // Restart STT with a fresh session – the previous one was cancelled on pause.
+    await startSTT();
     timerRef.current = setInterval(() => {
       setElapsedMs(
         Date.now() - startTimeRef.current - pausedDurationRef.current,
@@ -213,17 +228,16 @@ export default function RecordScreen() {
       }
     }, 100);
     setStatus("recording");
-  }, []);
+  }, [startSTT]);
 
   // ─── Stop Recording ───────────────────────────────────────────────────
   const handleStop = useCallback(async () => {
     clearTimers();
     setStatus("transcribing");
 
-    // Stop audio capture first so Whisper gets the complete file.
+    // Stop audio capture and wait for the STT session to fully wind down.
     const result = await AudioRecorder.stop();
 
-    // Transcribe the recorded file (fires onResult once with full transcript).
     const stt = getSTTProvider();
     await stt.stop(result?.uri);
 

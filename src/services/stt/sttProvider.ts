@@ -1,122 +1,199 @@
 /**
  * NoteGenius – Speech-to-Text provider interface.
- * Uses whisper.rn for fully offline, on-device transcription.
- * Audio is recorded via expo-audio and passed to Whisper after the session ends.
+ * Uses react-native-speech-recognition-kit for live on-device transcription.
+ * Recognition starts immediately when recording begins and streams partial and
+ * final results in real-time via native OS speech APIs.
  */
-import { initWhisper, type WhisperContext } from "whisper.rn";
-import { WhisperModelManager } from "./whisperModel";
+import {
+  addEventListener,
+  destroy as destroyRecognizer,
+  speechRecogntionEvents,
+  startListening,
+  stopListening,
+} from "react-native-speech-recognition-kit";
+// NOTE: setRecognitionLanguage / isRecognitionAvailable are declared in the JS
+// wrapper but NOT implemented in the native layer – calling them crashes.
+// The iOS recogniser always uses [NSLocale currentLocale]; locale is tracked
+// only on the JS side for segment metadata.
 
 // ─── Provider Interface ──────────────────────────────────────────────────────
 export interface STTProvider {
   /**
-   * Signal the start of a recording session.
-   * For Whisper this is a no-op STT-wise; actual transcription happens in stop().
+   * Start live speech recognition for the given BCP-47 locale.
+   * Partial results are delivered via onResult(text, false) as the user speaks;
+   * final results via onResult(text, true) when an utterance completes.
    */
   start(locale: string): Promise<void>;
   /**
-   * Stop and, for Whisper, transcribe the recorded audio.
-   * Pass the audio file URI so the provider can run inference.
-   * Fires onResult(text, true) then onSessionEnd() when done.
+   * Stop the recognition session and wait until it fully winds down.
+   * The audioUri parameter is accepted for interface compatibility but ignored –
+   * transcription happens live and does not require a file.
    */
   stop(audioUri?: string): Promise<void>;
-  /** Cancel any in-progress transcription without emitting a result. */
+  /** Abandon the session immediately without emitting any further results. */
   cancel(): Promise<void>;
   onResult: ((text: string, isFinal: boolean) => void) | null;
   onError: ((error: string) => void) | null;
-  /** Called after transcription completes (or is cancelled). */
+  /** Called after the recognition session ends (normally or via cancel). */
   onSessionEnd: (() => void) | null;
   isAvailable(): Promise<boolean>;
 }
 
-// ─── Locale helper ───────────────────────────────────────────────────────────
-/** Convert BCP-47 locale tags (e.g. "en-US", "hi-IN") to Whisper 2-letter codes. */
-function toWhisperLang(locale: string): string {
-  return locale.split("-")[0].toLowerCase();
-}
-
-// ─── Whisper STT Provider ────────────────────────────────────────────────────
-class WhisperSTTProvider implements STTProvider {
+// ─── Speech Recognition Kit STT Provider ────────────────────────────────────
+class SpeechRecognitionKitSTTProvider implements STTProvider {
   onResult: ((text: string, isFinal: boolean) => void) | null = null;
   onError: ((error: string) => void) | null = null;
   onSessionEnd: (() => void) | null = null;
 
-  private locale: string = "en";
-  private context: WhisperContext | null = null;
-  /** Function to abort an in-progress transcription. */
-  private stopTranscription: (() => void) | null = null;
+  private subscriptions: ReturnType<typeof addEventListener>[] = [];
+  /** Set to true once stop() has been called so we know to end on next RESULTS. */
+  private isStopping = false;
+  /** Guards against _endSession() being invoked more than once per session. */
+  private sessionEnded = false;
+  /** Resolves the Promise returned by stop(). */
+  private stopResolve: (() => void) | null = null;
+  /** Last partial text received – flushed as final if no RESULTS event fires. */
+  private lastPartialText: string = "";
 
-  async start(locale: string): Promise<void> {
-    this.locale = toWhisperLang(locale);
+  async start(_locale: string): Promise<void> {
+    // Reset state for a fresh session.
+    // NOTE: setRecognitionLanguage is not implemented natively; the recogniser
+    // always uses the device locale (NSLocale.currentLocale).
+    this.isStopping = false;
+    this.sessionEnded = false;
+    this.stopResolve = null;
+    this._removeListeners();
+
+    // Partial results → stream live text to the UI.
+    this.subscriptions.push(
+      addEventListener(speechRecogntionEvents.PARTIAL_RESULTS, (event) => {
+        const text = this._extractText(event);
+        if (text) {
+          this.lastPartialText = text;
+          this.onResult?.(text, false);
+        }
+      }),
+    );
+
+    // Final results → commit the utterance as a finished segment.
+    // Only end the session when stop() has been explicitly called; otherwise
+    // keep listening to capture subsequent utterances.
+    this.subscriptions.push(
+      addEventListener(speechRecogntionEvents.RESULTS, (event) => {
+        const text = this._extractText(event);
+        if (text) {
+          this.lastPartialText = ""; // final result supersedes any partial
+          this.onResult?.(text, true);
+        }
+        if (this.isStopping) {
+          this._endSession();
+        }
+      }),
+    );
+
+    // Error → report and close the session.
+    // Native emits { message: string, code?: number } for all error events.
+    this.subscriptions.push(
+      addEventListener(speechRecogntionEvents.ERROR, (event) => {
+        // Error 216 (kAFAssistantErrorDomain) is an audio device
+        // reconfiguration interrupt that fires in the iOS Simulator when
+        // the audio hardware is reset.  It is not a real speech error –
+        // just end the session silently.
+        // Check both numeric code field and the message string, because some
+        // native bridge versions only forward the message.
+        const code: number | undefined =
+          event?.code ?? event?.nativeEvent?.code;
+        const rawMsg: string =
+          event?.message ?? event?.error ?? JSON.stringify(event) ?? "";
+        if (code === 216 || rawMsg.includes("error 216")) {
+          this._endSession();
+          return;
+        }
+        const msg = rawMsg || "Unknown STT error";
+        console.error("[SpeechRecognitionKit] error:", msg, event);
+        this.onError?.(msg);
+        this._endSession();
+      }),
+    );
+
+    // END fires after RESULTS (or alone if no speech was detected).
+    this.subscriptions.push(
+      addEventListener(speechRecogntionEvents.END, () => {
+        this._endSession();
+      }),
+    );
+
+    await startListening();
   }
 
-  async stop(audioUri?: string): Promise<void> {
-    if (!audioUri) {
-      this.onSessionEnd?.();
-      return;
-    }
+  async stop(_audioUri?: string): Promise<void> {
+    // If the native session already ended on its own (e.g. silence timeout),
+    // resolve immediately – there is nothing left to stop.
+    if (this.sessionEnded) return;
 
-    try {
-      // Ensure the Whisper model is downloaded and context is initialised.
-      if (!this.context) {
-        const modelPath = await WhisperModelManager.ensureModel();
-        this.context = await initWhisper({ filePath: modelPath });
+    this.isStopping = true;
+
+    return new Promise<void>((resolve) => {
+      this.stopResolve = resolve;
+      // stopListening is declared as Promise<string> in the JS wrapper, but the
+      // native method has no resolve/reject blocks, so treat the return value as
+      // unreliable and fall back to the onSpeechEnd event to close the session.
+      try {
+        Promise.resolve(stopListening()).catch(() => this._endSession());
+      } catch {
+        this._endSession();
       }
-
-      // Normalise the URI – whisper.rn expects a "file://" prefixed path on iOS.
-      const uri = audioUri.startsWith("file://")
-        ? audioUri
-        : `file://${audioUri}`;
-
-      const { stop, promise } = this.context.transcribe(uri, {
-        language: this.locale,
-        maxLen: 1,
-        onNewSegments: (segments) => {
-          // Stream partial text back as the model produces segments.
-          const partial = segments
-            .map((s) => s.text)
-            .join(" ")
-            .trim();
-          if (partial) this.onResult?.(partial, false);
-        },
-      });
-
-      this.stopTranscription = stop;
-      const { result } = await promise;
-      this.stopTranscription = null;
-
-      const text = result.trim();
-      if (text) {
-        this.onResult?.(text, true);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[WhisperSTT] transcription error:", msg);
-      this.onError?.(msg);
-    } finally {
-      this.onSessionEnd?.();
-    }
+    });
   }
 
   async cancel(): Promise<void> {
-    if (this.stopTranscription) {
-      this.stopTranscription();
-      this.stopTranscription = null;
-    }
-    this.onSessionEnd?.();
+    this._removeListeners();
+    await Promise.resolve(destroyRecognizer()).catch(() => {});
+    this._endSession();
   }
 
   async isAvailable(): Promise<boolean> {
-    return WhisperModelManager.isDownloaded();
+    // isRecognitionAvailable is not implemented natively – return true so the
+    // UI can always attempt recognition (the native layer will emit an error if
+    // speech permissions are denied).
+    return true;
   }
 
-  /** Release the Whisper context and free native memory. */
   async destroy(): Promise<void> {
-    this.stopTranscription?.();
-    this.stopTranscription = null;
-    if (this.context) {
-      await this.context.release();
-      this.context = null;
+    this._removeListeners();
+    await Promise.resolve(destroyRecognizer()).catch(() => {});
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private _extractText(event: any): string {
+    // The native events emit { value: string } – a plain string, not an array.
+    if (typeof event?.value === "string") return event.value;
+    if (Array.isArray(event?.value)) return (event.value[0] as string) ?? "";
+    return "";
+  }
+
+  private _endSession(): void {
+    if (this.sessionEnded) return;
+    this.sessionEnded = true;
+    this._removeListeners();
+    // If stop() was called but the native layer never fired a final RESULTS
+    // event (e.g. it emitted END or an error 216 instead), flush the last
+    // partial text as a final committed result so the segment is not lost.
+    if (this.isStopping && this.lastPartialText.trim()) {
+      this.onResult?.(this.lastPartialText.trim(), true);
+      this.lastPartialText = "";
     }
+    this.onSessionEnd?.();
+    this.stopResolve?.();
+    this.stopResolve = null;
+  }
+
+  private _removeListeners(): void {
+    for (const sub of this.subscriptions) {
+      sub?.remove?.();
+    }
+    this.subscriptions = [];
   }
 }
 
@@ -141,12 +218,14 @@ let provider: STTProvider | null = null;
 
 export function getSTTProvider(offline = false): STTProvider {
   if (provider) return provider;
-  provider = offline ? new OfflineSTTProvider() : new WhisperSTTProvider();
+  provider = offline
+    ? new OfflineSTTProvider()
+    : new SpeechRecognitionKitSTTProvider();
   return provider;
 }
 
 export async function destroySTTProvider(): Promise<void> {
-  if (provider && provider instanceof WhisperSTTProvider) {
+  if (provider && provider instanceof SpeechRecognitionKitSTTProvider) {
     await provider.destroy();
   }
   provider = null;
