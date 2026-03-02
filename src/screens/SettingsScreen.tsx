@@ -74,28 +74,26 @@ function getGeminiErrorHelp(error: string): GeminiErrorHelp {
     msg.includes("invalid_api_key")
   ) {
     return {
-      cause: "The API key you entered doesn't match any active key in your Google account.",
+      cause:
+        "The API key you entered doesn't match any active key in your Google account.",
       steps: [
         "Open Google AI Studio → aistudio.google.com",
         "Sign in with your Google account.",
-        "Tap \"Get API key\" in the left sidebar.",
-        "Click \"Create API key\" and copy the new key.",
+        'Tap "Get API key" in the left sidebar.',
+        'Click "Create API key" and copy the new key.',
         "Paste it here and tap Save Key Securely.",
       ],
-      tip: "Make sure you copied the entire key — they start with \"AIza\".",
+      tip: 'Make sure you copied the entire key — they start with "AIza".',
     };
   }
 
-  if (
-    msg.includes("api_key_expired") ||
-    msg.includes("key expired")
-  ) {
+  if (msg.includes("api_key_expired") || msg.includes("key expired")) {
     return {
       cause: "Your API key has expired.",
       steps: [
         "Open Google AI Studio → aistudio.google.com",
-        "Go to \"Get API key\" in the left sidebar.",
-        "Delete the old key, then click \"Create API key\".",
+        'Go to "Get API key" in the left sidebar.',
+        'Delete the old key, then click "Create API key".',
         "Copy the new key and paste it here.",
       ],
     };
@@ -124,11 +122,12 @@ function getGeminiErrorHelp(error: string): GeminiErrorHelp {
     msg.includes("not enabled")
   ) {
     return {
-      cause: "The Generative Language API is not enabled for this key's project.",
+      cause:
+        "The Generative Language API is not enabled for this key's project.",
       steps: [
         "Open console.cloud.google.com and select your project.",
-        "Go to \"APIs & Services\" → \"Enable APIs & Services\".",
-        "Search for \"Generative Language API\" and click Enable.",
+        'Go to "APIs & Services" → "Enable APIs & Services".',
+        'Search for "Generative Language API" and click Enable.',
         "Wait 1–2 minutes for the change to propagate, then try again.",
       ],
     };
@@ -180,10 +179,10 @@ function getHuggingFaceErrorHelp(error: string): GeminiErrorHelp {
       steps: [
         "Open huggingface.co and sign in to your account.",
         "Go to Settings → Access Tokens.",
-        "Click \"New token\", set role to \"Read\", and copy it.",
+        'Click "New token", set role to "Read", and copy it.',
         "Paste it here and tap Save Token Securely.",
       ],
-      tip: "Hugging Face tokens start with \"hf_\".",
+      tip: 'Hugging Face tokens start with "hf_".',
     };
   }
 
@@ -194,7 +193,8 @@ function getHuggingFaceErrorHelp(error: string): GeminiErrorHelp {
     msg.includes("too many")
   ) {
     return {
-      cause: "You have exceeded the free-tier rate limit for Hugging Face inference.",
+      cause:
+        "You have exceeded the free-tier rate limit for Hugging Face inference.",
       steps: [
         "Wait a few minutes and tap Test again — free-tier resets quickly.",
         "Consider subscribing to the Hugging Face PRO plan for higher quotas.",
@@ -226,7 +226,8 @@ function getHuggingFaceErrorHelp(error: string): GeminiErrorHelp {
     msg.includes("connection")
   ) {
     return {
-      cause: "Could not reach the Hugging Face API — this is likely a network issue.",
+      cause:
+        "Could not reach the Hugging Face API — this is likely a network issue.",
       steps: [
         "Check that your device has an active internet connection.",
         "Try switching between Wi-Fi and mobile data.",
@@ -258,8 +259,13 @@ export default function SettingsScreen() {
     deleteHuggingFaceApiKey,
     setAIProvider: setUserAIProvider,
   } = useUserStore();
-  const { settings, updateSettings, setAIProvider, acknowledgeGeminiPrivacy, acknowledgeHuggingFacePrivacy } =
-    useSettingsStore();
+  const {
+    settings,
+    updateSettings,
+    setAIProvider,
+    acknowledgeGeminiPrivacy,
+    acknowledgeHuggingFacePrivacy,
+  } = useSettingsStore();
 
   const [name, setName] = useState(profile?.name ?? "");
   const [phone, setPhone] = useState(profile?.phone ?? "");
@@ -280,7 +286,9 @@ export default function SettingsScreen() {
   // ─── Hugging Face API key state ───────────────────────────────────────
   const [hfApiKey, setHfApiKey] = useState("");
   const [isSavingHfKey, setIsSavingHfKey] = useState(false);
-  const [hfKeyValidationError, setHfKeyValidationError] = useState<string | null>(null);
+  const [hfKeyValidationError, setHfKeyValidationError] = useState<
+    string | null
+  >(null);
   const hasHfApiKey = Boolean(profile?.huggingfaceApiKey);
 
   // ─── Gemini connection status ────────────────────────────────────────
@@ -357,7 +365,7 @@ export default function SettingsScreen() {
       if (res.ok || res.status === 429 || res.status === 503) {
         setHfStatus("connected");
       } else {
-        const body = await res.json().catch(() => ({})) as { error?: string };
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
         setHfStatus("error");
         setHfError(body?.error ?? `HTTP ${res.status}`);
       }
@@ -396,7 +404,10 @@ export default function SettingsScreen() {
         setShowPrivacyModal(true);
         return;
       }
-      if (provider === "huggingface" && !settings.huggingfacePrivacyAcknowledged) {
+      if (
+        provider === "huggingface" &&
+        !settings.huggingfacePrivacyAcknowledged
+      ) {
         // Show one-time privacy modal
         setPendingProvider(provider);
         setShowPrivacyModal(true);
@@ -405,7 +416,10 @@ export default function SettingsScreen() {
       setAIProvider(provider);
       setUserAIProvider(provider);
     },
-    [settings.geminiPrivacyAcknowledged, settings.huggingfacePrivacyAcknowledged],
+    [
+      settings.geminiPrivacyAcknowledged,
+      settings.huggingfacePrivacyAcknowledged,
+    ],
   );
 
   const handleAcceptPrivacy = useCallback(() => {
@@ -518,7 +532,10 @@ export default function SettingsScreen() {
             await deleteHuggingFaceApiKey();
             setAIProvider("offline");
             setUserAIProvider("offline");
-            Alert.alert("Removed", "API token deleted. Provider set to Offline.");
+            Alert.alert(
+              "Removed",
+              "API token deleted. Provider set to Offline.",
+            );
           },
         },
       ],
@@ -646,41 +663,43 @@ export default function SettingsScreen() {
               Provider
             </Text>
             <View style={styles.providerButtons}>
-              {(["offline", "gemini", "huggingface"] as AIProvider[]).map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={[
-                    styles.providerButton,
-                    {
-                      backgroundColor:
-                        settings.aiProvider === p
-                          ? colors.primary
-                          : colors.surfaceVariant,
-                      borderColor:
-                        settings.aiProvider === p
-                          ? colors.primary
-                          : colors.border,
-                    },
-                  ]}
-                  onPress={() => handleProviderChange(p)}
-                  accessibilityLabel={`Select ${p} provider`}
-                >
-                  <Text
-                    style={{
-                      color:
-                        settings.aiProvider === p ? "#FFFFFF" : colors.text,
-                      fontWeight: "600",
-                      fontSize: FontSize.sm,
-                    }}
+              {(["offline", "gemini", "huggingface"] as AIProvider[]).map(
+                (p) => (
+                  <TouchableOpacity
+                    key={p}
+                    style={[
+                      styles.providerButton,
+                      {
+                        backgroundColor:
+                          settings.aiProvider === p
+                            ? colors.primary
+                            : colors.surfaceVariant,
+                        borderColor:
+                          settings.aiProvider === p
+                            ? colors.primary
+                            : colors.border,
+                      },
+                    ]}
+                    onPress={() => handleProviderChange(p)}
+                    accessibilityLabel={`Select ${p} provider`}
                   >
-                    {p === "offline"
-                      ? "📱 Offline"
-                      : p === "gemini"
-                        ? "✨ Gemini"
-                        : "🤗 HuggingFace"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={{
+                        color:
+                          settings.aiProvider === p ? "#FFFFFF" : colors.text,
+                        fontWeight: "600",
+                        fontSize: FontSize.sm,
+                      }}
+                    >
+                      {p === "offline"
+                        ? "📱 Offline"
+                        : p === "gemini"
+                          ? "✨ Gemini"
+                          : "🤗 HuggingFace"}
+                    </Text>
+                  </TouchableOpacity>
+                ),
+              )}
             </View>
           </View>
 
@@ -784,78 +803,80 @@ export default function SettingsScreen() {
                   </View>
 
                   {/* Inline help for saved-key connection errors */}
-                  {geminiStatus === "error" && geminiError ? (() => {
-                    const help = getGeminiErrorHelp(geminiError);
-                    return (
-                      <View
-                        style={[
-                          styles.keyHelpBox,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.danger,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.keyHelpHeader,
-                            { color: colors.danger },
-                          ]}
-                        >
-                          ⚠️ Connection failed
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpCause,
-                            { color: colors.text },
-                          ]}
-                        >
-                          {help.cause}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpStepsTitle,
-                            { color: colors.text },
-                          ]}
-                        >
-                          How to fix:
-                        </Text>
-                        {help.steps.map((step, i) => (
-                          <View key={i} style={styles.keyHelpStepRow}>
-                            <Text
-                              style={[
-                                styles.keyHelpStepNum,
-                                { color: colors.primary },
-                              ]}
-                            >
-                              {i + 1}.
-                            </Text>
-                            <Text
-                              style={[
-                                styles.keyHelpStepText,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {step}
-                            </Text>
-                          </View>
-                        ))}
-                        {help.tip ? (
-                          <Text
+                  {geminiStatus === "error" && geminiError
+                    ? (() => {
+                        const help = getGeminiErrorHelp(geminiError);
+                        return (
+                          <View
                             style={[
-                              styles.keyHelpTip,
+                              styles.keyHelpBox,
                               {
-                                color: colors.textSecondary,
-                                borderColor: colors.border,
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
                               },
                             ]}
                           >
-                            💡 {help.tip}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })() : null}
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Connection failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
                 </>
               ) : (
                 <>
@@ -903,86 +924,88 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
 
                   {/* Inline validation error + help */}
-                  {keyValidationError ? (() => {
-                    const help = getGeminiErrorHelp(keyValidationError);
-                    return (
-                      <View
-                        style={[
-                          styles.keyHelpBox,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.danger,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.keyHelpHeader,
-                            { color: colors.danger },
-                          ]}
-                        >
-                          ⚠️ Key verification failed
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpError,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          {keyValidationError}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpCause,
-                            { color: colors.text },
-                          ]}
-                        >
-                          {help.cause}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.keyHelpStepsTitle,
-                            { color: colors.text },
-                          ]}
-                        >
-                          How to fix:
-                        </Text>
-                        {help.steps.map((step, i) => (
-                          <View key={i} style={styles.keyHelpStepRow}>
-                            <Text
-                              style={[
-                                styles.keyHelpStepNum,
-                                { color: colors.primary },
-                              ]}
-                            >
-                              {i + 1}.
-                            </Text>
-                            <Text
-                              style={[
-                                styles.keyHelpStepText,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {step}
-                            </Text>
-                          </View>
-                        ))}
-                        {help.tip ? (
-                          <Text
+                  {keyValidationError
+                    ? (() => {
+                        const help = getGeminiErrorHelp(keyValidationError);
+                        return (
+                          <View
                             style={[
-                              styles.keyHelpTip,
+                              styles.keyHelpBox,
                               {
-                                color: colors.textSecondary,
-                                borderColor: colors.border,
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
                               },
                             ]}
                           >
-                            💡 {help.tip}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })() : null}
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Key verification failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpError,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {keyValidationError}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
                 </>
               )}
             </View>
@@ -996,10 +1019,15 @@ export default function SettingsScreen() {
               </Text>
               <Text
                 style={[
-                  { color: colors.textMuted, fontSize: FontSize.xs, marginBottom: Spacing.xs },
+                  {
+                    color: colors.textMuted,
+                    fontSize: FontSize.xs,
+                    marginBottom: Spacing.xs,
+                  },
                 ]}
               >
-                Primary: {HF_PRIMARY_MODEL}{"\n"}
+                Primary: {HF_PRIMARY_MODEL}
+                {"\n"}
                 Fallback (auto on rate-limit): {HF_FALLBACK_MODEL}
               </Text>
               {hasHfApiKey ? (
@@ -1097,50 +1125,80 @@ export default function SettingsScreen() {
                   </View>
 
                   {/* Inline help for saved-key connection errors */}
-                  {hfStatus === "error" && hfError ? (() => {
-                    const help = getHuggingFaceErrorHelp(hfError);
-                    return (
-                      <View
-                        style={[
-                          styles.keyHelpBox,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.danger,
-                          },
-                        ]}
-                      >
-                        <Text style={[styles.keyHelpHeader, { color: colors.danger }]}>
-                          ⚠️ Connection failed
-                        </Text>
-                        <Text style={[styles.keyHelpCause, { color: colors.text }]}>
-                          {help.cause}
-                        </Text>
-                        <Text style={[styles.keyHelpStepsTitle, { color: colors.text }]}>
-                          How to fix:
-                        </Text>
-                        {help.steps.map((step, i) => (
-                          <View key={i} style={styles.keyHelpStepRow}>
-                            <Text style={[styles.keyHelpStepNum, { color: colors.primary }]}>
-                              {i + 1}.
-                            </Text>
-                            <Text style={[styles.keyHelpStepText, { color: colors.textSecondary }]}>
-                              {step}
-                            </Text>
-                          </View>
-                        ))}
-                        {help.tip ? (
-                          <Text
+                  {hfStatus === "error" && hfError
+                    ? (() => {
+                        const help = getHuggingFaceErrorHelp(hfError);
+                        return (
+                          <View
                             style={[
-                              styles.keyHelpTip,
-                              { color: colors.textSecondary, borderColor: colors.border },
+                              styles.keyHelpBox,
+                              {
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
+                              },
                             ]}
                           >
-                            💡 {help.tip}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })() : null}
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Connection failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
                 </>
               ) : (
                 <>
@@ -1188,53 +1246,89 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
 
                   {/* Inline validation error + help */}
-                  {hfKeyValidationError ? (() => {
-                    const help = getHuggingFaceErrorHelp(hfKeyValidationError);
-                    return (
-                      <View
-                        style={[
-                          styles.keyHelpBox,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.danger,
-                          },
-                        ]}
-                      >
-                        <Text style={[styles.keyHelpHeader, { color: colors.danger }]}>
-                          ⚠️ Token verification failed
-                        </Text>
-                        <Text style={[styles.keyHelpError, { color: colors.textSecondary }]}>
-                          {hfKeyValidationError}
-                        </Text>
-                        <Text style={[styles.keyHelpCause, { color: colors.text }]}>
-                          {help.cause}
-                        </Text>
-                        <Text style={[styles.keyHelpStepsTitle, { color: colors.text }]}>
-                          How to fix:
-                        </Text>
-                        {help.steps.map((step, i) => (
-                          <View key={i} style={styles.keyHelpStepRow}>
-                            <Text style={[styles.keyHelpStepNum, { color: colors.primary }]}>
-                              {i + 1}.
-                            </Text>
-                            <Text style={[styles.keyHelpStepText, { color: colors.textSecondary }]}>
-                              {step}
-                            </Text>
-                          </View>
-                        ))}
-                        {help.tip ? (
-                          <Text
+                  {hfKeyValidationError
+                    ? (() => {
+                        const help =
+                          getHuggingFaceErrorHelp(hfKeyValidationError);
+                        return (
+                          <View
                             style={[
-                              styles.keyHelpTip,
-                              { color: colors.textSecondary, borderColor: colors.border },
+                              styles.keyHelpBox,
+                              {
+                                backgroundColor: colors.surface,
+                                borderColor: colors.danger,
+                              },
                             ]}
                           >
-                            💡 {help.tip}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })() : null}
+                            <Text
+                              style={[
+                                styles.keyHelpHeader,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              ⚠️ Token verification failed
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpError,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {hfKeyValidationError}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpCause,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {help.cause}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepsTitle,
+                                { color: colors.text },
+                              ]}
+                            >
+                              How to fix:
+                            </Text>
+                            {help.steps.map((step, i) => (
+                              <View key={i} style={styles.keyHelpStepRow}>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepNum,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {i + 1}.
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.keyHelpStepText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  {step}
+                                </Text>
+                              </View>
+                            ))}
+                            {help.tip ? (
+                              <Text
+                                style={[
+                                  styles.keyHelpTip,
+                                  {
+                                    color: colors.textSecondary,
+                                    borderColor: colors.border,
+                                  },
+                                ]}
+                              >
+                                💡 {help.tip}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()
+                    : null}
                 </>
               )}
             </View>
