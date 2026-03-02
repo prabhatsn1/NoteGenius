@@ -85,7 +85,9 @@ export const SettingsRepo = {
   clearAll(): void {
     storage.clearAll();
     SecureStore.deleteItemAsync(SECURE_KEYS.GEMINI_API_KEY).catch(() => {});
-    SecureStore.deleteItemAsync(SECURE_KEYS.HUGGINGFACE_API_KEY).catch(() => {});
+    SecureStore.deleteItemAsync(SECURE_KEYS.HUGGINGFACE_API_KEY).catch(
+      () => {},
+    );
   },
 
   // ─── Gemini API Key (Secure Store) ────────────────────────────────────
