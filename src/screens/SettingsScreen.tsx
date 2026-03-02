@@ -24,6 +24,7 @@ import {
 } from "../constants/theme";
 import { SettingsRepo } from "../data/repos/SettingsRepo";
 import { ExportService } from "../services/export/exportService";
+import { validateGeminiApiKey } from "../services/ai/gemini/GeminiProvider";
 import { useSettingsStore } from "../store/useSettingsStore";
 import { useUserStore } from "../store/useUserStore";
 import type { AIProvider } from "../types/models";
@@ -38,6 +39,113 @@ const PRIVACY_NOTICE =
   "(expo-secure-store) and is never synced to any server. " +
   "You can switch back to Offline processing at any time — all previously " +
   "generated summaries and flashcards remain stored locally.";
+
+// ─── Gemini key error help ───────────────────────────────────────────────────
+
+type GeminiErrorHelp = {
+  cause: string;
+  steps: string[];
+  tip?: string;
+};
+
+function getGeminiErrorHelp(error: string): GeminiErrorHelp {
+  const msg = error.toLowerCase();
+
+  if (
+    msg.includes("api key not valid") ||
+    msg.includes("api_key_invalid") ||
+    msg.includes("invalid api key") ||
+    msg.includes("invalid_api_key")
+  ) {
+    return {
+      cause: "The API key you entered doesn't match any active key in your Google account.",
+      steps: [
+        "Open Google AI Studio → aistudio.google.com",
+        "Sign in with your Google account.",
+        "Tap \"Get API key\" in the left sidebar.",
+        "Click \"Create API key\" and copy the new key.",
+        "Paste it here and tap Save Key Securely.",
+      ],
+      tip: "Make sure you copied the entire key — they start with \"AIza\".",
+    };
+  }
+
+  if (
+    msg.includes("api_key_expired") ||
+    msg.includes("key expired")
+  ) {
+    return {
+      cause: "Your API key has expired.",
+      steps: [
+        "Open Google AI Studio → aistudio.google.com",
+        "Go to \"Get API key\" in the left sidebar.",
+        "Delete the old key, then click \"Create API key\".",
+        "Copy the new key and paste it here.",
+      ],
+    };
+  }
+
+  if (
+    msg.includes("quota") ||
+    msg.includes("resource_exhausted") ||
+    msg.includes("rate limit")
+  ) {
+    return {
+      cause: "You have exceeded the free usage quota for this API key.",
+      steps: [
+        "Wait a few minutes and tap Test again — free tier resets per minute.",
+        "If it persists, open console.cloud.google.com and check your quotas.",
+        "Consider enabling billing on your project for higher limits.",
+        "Or create a new Google Cloud project and generate a fresh API key.",
+      ],
+      tip: "Free Gemini API tier allows ~60 requests/minute.",
+    };
+  }
+
+  if (
+    msg.includes("permission_denied") ||
+    msg.includes("service_disabled") ||
+    msg.includes("not enabled")
+  ) {
+    return {
+      cause: "The Generative Language API is not enabled for this key's project.",
+      steps: [
+        "Open console.cloud.google.com and select your project.",
+        "Go to \"APIs & Services\" → \"Enable APIs & Services\".",
+        "Search for \"Generative Language API\" and click Enable.",
+        "Wait 1–2 minutes for the change to propagate, then try again.",
+      ],
+    };
+  }
+
+  if (
+    msg.includes("network") ||
+    msg.includes("fetch") ||
+    msg.includes("timeout") ||
+    msg.includes("connection")
+  ) {
+    return {
+      cause: "Could not reach the Gemini API — this is likely a network issue.",
+      steps: [
+        "Check that your device has an active internet connection.",
+        "Try switching between Wi-Fi and mobile data.",
+        "If you're behind a VPN or proxy, try disabling it temporarily.",
+        "Retry once connectivity is restored.",
+      ],
+    };
+  }
+
+  // Fallback
+  return {
+    cause: "The Gemini API returned an unexpected error.",
+    steps: [
+      "Double-check your API key at aistudio.google.com → Get API key.",
+      "Delete and recreate the key if it looks correct but still fails.",
+      "Make sure your Google account can access the Gemini API (some Workspace accounts restrict it).",
+      "If the problem persists, check status.cloud.google.com for outages.",
+    ],
+  };
+}
 
 export default function SettingsScreen() {
   const colors = useThemeColors();
@@ -55,6 +163,10 @@ export default function SettingsScreen() {
   const [phone, setPhone] = useState(profile?.phone ?? "");
   const phoneRef = useRef<import("react-native").TextInput>(null);
   const [apiKey, setApiKey] = useState("");
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [keyValidationError, setKeyValidationError] = useState<string | null>(
+    null,
+  );
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<AIProvider | null>(
     null,
@@ -153,9 +265,26 @@ export default function SettingsScreen() {
       Alert.alert("Required", "Please enter your Gemini API key.");
       return;
     }
-    await setGeminiApiKey(trimmed);
-    setApiKey("");
-    Alert.alert("Saved", "Gemini API key stored securely on device.");
+    setKeyValidationError(null);
+    setIsSavingKey(true);
+    try {
+      const result = await validateGeminiApiKey(trimmed);
+      if (!result.valid) {
+        setKeyValidationError(
+          result.error ?? "The key was rejected by the Gemini API.",
+        );
+        return;
+      }
+      await setGeminiApiKey(trimmed);
+      setApiKey("");
+      setKeyValidationError(null);
+      Alert.alert(
+        "Saved",
+        "Gemini API key verified and stored securely on device.",
+      );
+    } finally {
+      setIsSavingKey(false);
+    }
   }, [apiKey]);
 
   const handleDeleteApiKey = useCallback(async () => {
@@ -431,6 +560,80 @@ export default function SettingsScreen() {
                       </Text>
                     </TouchableOpacity>
                   </View>
+
+                  {/* Inline help for saved-key connection errors */}
+                  {geminiStatus === "error" && geminiError ? (() => {
+                    const help = getGeminiErrorHelp(geminiError);
+                    return (
+                      <View
+                        style={[
+                          styles.keyHelpBox,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.danger,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.keyHelpHeader,
+                            { color: colors.danger },
+                          ]}
+                        >
+                          ⚠️ Connection failed
+                        </Text>
+                        <Text
+                          style={[
+                            styles.keyHelpCause,
+                            { color: colors.text },
+                          ]}
+                        >
+                          {help.cause}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.keyHelpStepsTitle,
+                            { color: colors.text },
+                          ]}
+                        >
+                          How to fix:
+                        </Text>
+                        {help.steps.map((step, i) => (
+                          <View key={i} style={styles.keyHelpStepRow}>
+                            <Text
+                              style={[
+                                styles.keyHelpStepNum,
+                                { color: colors.primary },
+                              ]}
+                            >
+                              {i + 1}.
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepText,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {step}
+                            </Text>
+                          </View>
+                        ))}
+                        {help.tip ? (
+                          <Text
+                            style={[
+                              styles.keyHelpTip,
+                              {
+                                color: colors.textSecondary,
+                                borderColor: colors.border,
+                              },
+                            ]}
+                          >
+                            💡 {help.tip}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  })() : null}
                 </>
               ) : (
                 <>
@@ -444,7 +647,10 @@ export default function SettingsScreen() {
                       },
                     ]}
                     value={apiKey}
-                    onChangeText={setApiKey}
+                    onChangeText={(v) => {
+                      setApiKey(v);
+                      if (keyValidationError) setKeyValidationError(null);
+                    }}
                     placeholder="Paste your Gemini API key"
                     placeholderTextColor={colors.textMuted}
                     secureTextEntry
@@ -456,15 +662,105 @@ export default function SettingsScreen() {
                     style={[
                       styles.button,
                       {
-                        backgroundColor: colors.primary,
+                        backgroundColor: isSavingKey
+                          ? colors.surfaceVariant
+                          : colors.primary,
                         marginTop: Spacing.sm,
+                        opacity: isSavingKey ? 0.7 : 1,
                       },
                     ]}
                     onPress={handleSaveApiKey}
+                    disabled={isSavingKey}
                     accessibilityLabel="Save API key"
                   >
-                    <Text style={styles.buttonText}>Save Key Securely</Text>
+                    {isSavingKey ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.buttonText}>Save Key Securely</Text>
+                    )}
                   </TouchableOpacity>
+
+                  {/* Inline validation error + help */}
+                  {keyValidationError ? (() => {
+                    const help = getGeminiErrorHelp(keyValidationError);
+                    return (
+                      <View
+                        style={[
+                          styles.keyHelpBox,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.danger,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.keyHelpHeader,
+                            { color: colors.danger },
+                          ]}
+                        >
+                          ⚠️ Key verification failed
+                        </Text>
+                        <Text
+                          style={[
+                            styles.keyHelpError,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          {keyValidationError}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.keyHelpCause,
+                            { color: colors.text },
+                          ]}
+                        >
+                          {help.cause}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.keyHelpStepsTitle,
+                            { color: colors.text },
+                          ]}
+                        >
+                          How to fix:
+                        </Text>
+                        {help.steps.map((step, i) => (
+                          <View key={i} style={styles.keyHelpStepRow}>
+                            <Text
+                              style={[
+                                styles.keyHelpStepNum,
+                                { color: colors.primary },
+                              ]}
+                            >
+                              {i + 1}.
+                            </Text>
+                            <Text
+                              style={[
+                                styles.keyHelpStepText,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {step}
+                            </Text>
+                          </View>
+                        ))}
+                        {help.tip ? (
+                          <Text
+                            style={[
+                              styles.keyHelpTip,
+                              {
+                                color: colors.textSecondary,
+                                borderColor: colors.border,
+                              },
+                            ]}
+                          >
+                            💡 {help.tip}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  })() : null}
                 </>
               )}
             </View>
@@ -719,6 +1015,52 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
+  },
+  keyHelpBox: {
+    marginTop: Spacing.sm,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    gap: 6,
+  },
+  keyHelpHeader: {
+    fontSize: FontSize.sm,
+    fontWeight: "700",
+  },
+  keyHelpError: {
+    fontSize: FontSize.xs,
+    fontStyle: "italic",
+  },
+  keyHelpCause: {
+    fontSize: FontSize.sm,
+    lineHeight: 19,
+  },
+  keyHelpStepsTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  keyHelpStepRow: {
+    flexDirection: "row",
+    gap: 6,
+    paddingLeft: 4,
+  },
+  keyHelpStepNum: {
+    fontSize: FontSize.sm,
+    fontWeight: "700",
+    minWidth: 18,
+  },
+  keyHelpStepText: {
+    fontSize: FontSize.sm,
+    lineHeight: 19,
+    flex: 1,
+  },
+  keyHelpTip: {
+    fontSize: FontSize.xs,
+    lineHeight: 17,
+    borderTopWidth: 1,
+    paddingTop: Spacing.xs,
+    marginTop: 4,
   },
   privacyBox: {
     marginTop: Spacing.md,
