@@ -213,6 +213,47 @@ export function createGeminiProvider(
   };
 }
 
+// ─── Key validation ──────────────────────────────────────────────────────────
+
+/**
+ * Validates a Gemini API key by making a minimal generateContent request.
+ * Returns { valid: true } on success, or { valid: false, error: string } on failure.
+ */
+export async function validateGeminiApiKey(
+  apiKey: string,
+  modelName: string = DEFAULT_GEMINI_MODEL,
+): Promise<{ valid: boolean; error?: string }> {
+  if (!apiKey.trim()) {
+    return { valid: false, error: "API key is empty." };
+  }
+  try {
+    const url = `${GEMINI_BASE_URL}/${modelName}:generateContent?key=${apiKey.trim()}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: "ping" }] }],
+      }),
+    });
+    // 200 OK or 400 Bad Request both indicate the key itself is valid
+    if (res.ok || res.status === 400) {
+      return { valid: true };
+    }
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    return {
+      valid: false,
+      error: body?.error?.message ?? `HTTP ${res.status}`,
+    };
+  } catch (e: unknown) {
+    return {
+      valid: false,
+      error: e instanceof Error ? e.message : "Network error",
+    };
+  }
+}
+
 // ─── Internal helpers ───────────────────────────────────────────────────────
 
 function emptySummary(): AiSummaryResult {
