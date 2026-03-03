@@ -248,6 +248,25 @@ function getHuggingFaceErrorHelp(error: string): GeminiErrorHelp {
   };
 }
 
+// ─── Section component ───────────────────────────────────────────────────────
+// Defined OUTSIDE SettingsScreen so it has a stable identity and never causes
+// TextInput focus loss due to unmount/remount on every parent re-render.
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const colors = useThemeColors();
+  return (
+    <View style={[styles.section, { borderColor: colors.border }]}>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const colors = useThemeColors();
   const {
@@ -572,19 +591,6 @@ export default function SettingsScreen() {
       ],
     );
   }, []);
-
-  const Section = ({
-    title,
-    children,
-  }: {
-    title: string;
-    children: React.ReactNode;
-  }) => (
-    <View style={[styles.section, { borderColor: colors.border }]}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-      {children}
-    </View>
-  );
 
   return (
     <SafeAreaView
