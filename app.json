@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "NoteGenius",
-    "slug": "notegenius",
+    "slug": "note-genius",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -80,8 +80,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f56776ca-7b52-49f3-8b87-c0c596f879d9"
+        "projectId": "519df85a-79d3-444a-be96-b1c8b1f23e13"
       }
-    }
+    },
+    "owner": "devilgod431"
   }
 }
