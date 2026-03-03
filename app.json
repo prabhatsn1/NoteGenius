@@ -64,6 +64,13 @@
         {
           "microphonePermission": "NoteGenius needs microphone access to record voice notes."
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "YOUR_SENTRY_ORG",
+          "project": "notegenius"
+        }
       ]
     ],
     "experiments": {
