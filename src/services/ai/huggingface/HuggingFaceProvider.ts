@@ -23,7 +23,7 @@ import type {
 export const HF_PRIMARY_MODEL = "mistralai/Mistral-7B-Instruct-v0.2";
 export const HF_FALLBACK_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct";
 
-const HF_CHAT_URL = "https://api-inference.huggingface.co/v1/chat/completions";
+const HF_CHAT_URL = "https://router.huggingface.co/v1/chat/completions";
 
 // ─── Prompt templates ────────────────────────────────────────────────────────
 
