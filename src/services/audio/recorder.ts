@@ -17,6 +17,7 @@ import {
   setAudioModeAsync,
 } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
+import { addAudioBreadcrumb, captureAudioError } from "../monitoring/sentry";
 
 /** Recording quality preset optimized for voice. */
 const RECORDING_OPTIONS: RecordingOptions = {
@@ -56,9 +57,13 @@ export const AudioRecorder = {
 
   /** Start recording; returns the AudioRecorder object for status polling. */
   async start(): Promise<ExpoAudioRecorder | null> {
+    addAudioBreadcrumb("recording started");
     try {
       const hasPermission = await AudioRecorder.prepare();
-      if (!hasPermission) return null;
+      if (!hasPermission) {
+        addAudioBreadcrumb("recording blocked: microphone permission denied");
+        return null;
+      }
 
       recorder = new AudioModule.AudioRecorder({
         ...RECORDING_OPTIONS,
@@ -69,6 +74,7 @@ export const AudioRecorder = {
       return recorder;
     } catch (err) {
       console.error("[AudioRecorder] start error:", err);
+      captureAudioError(err, "start");
       return null;
     }
   },
@@ -105,12 +111,14 @@ export const AudioRecorder = {
       }
 
       recorder = null;
+      addAudioBreadcrumb("recording stopped", { durationMs });
       return {
         uri: destUri,
         durationMs,
       };
     } catch (err) {
       console.error("[AudioRecorder] stop error:", err);
+      captureAudioError(err, "stop");
       recorder = null;
       return null;
     }
@@ -156,6 +164,7 @@ export const AudioPlayer = {
       return player;
     } catch (err) {
       console.error("[AudioPlayer] play error:", err);
+      captureAudioError(err, "play");
       return null;
     }
   },
