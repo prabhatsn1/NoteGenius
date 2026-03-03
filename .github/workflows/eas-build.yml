@@ -1,8 +1,6 @@
 name: EAS Build
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       platform:
@@ -48,10 +46,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build (push to main)
-        if: github.event_name == 'push'
-        run: eas build --platform android --profile production --non-interactive
-
       - name: Build (manual trigger)
-        if: github.event_name == 'workflow_dispatch'
         run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive
