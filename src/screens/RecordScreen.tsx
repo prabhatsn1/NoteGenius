@@ -287,9 +287,13 @@ export default function RecordScreen() {
       try {
         const { settings } = useSettingsStore.getState();
         const { profile } = useUserStore.getState();
+        const apiKey =
+          settings.aiProvider === "huggingface"
+            ? profile?.huggingfaceApiKey
+            : profile?.geminiApiKey;
         const aiProvider = makeAiProvider(
           settings.aiProvider,
-          profile?.geminiApiKey,
+          apiKey,
           settings.geminiModel,
         );
         const generated = await aiProvider.generateTitle(transcript);

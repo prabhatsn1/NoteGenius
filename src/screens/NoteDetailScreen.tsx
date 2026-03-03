@@ -95,10 +95,15 @@ export default function NoteDetailScreen() {
     } catch (err) {
       console.error(`[${ai.label}] summarize failed:`, err);
 
-      // Fallback to offline if Gemini failed
-      if (settings.aiProvider === "gemini") {
+      // Fallback to offline if Gemini or HuggingFace failed
+      if (
+        settings.aiProvider === "gemini" ||
+        settings.aiProvider === "huggingface"
+      ) {
+        const providerLabel =
+          settings.aiProvider === "gemini" ? "Gemini" : "Hugging Face";
         Alert.alert(
-          "Gemini Unavailable",
+          `${providerLabel} Unavailable`,
           "Falling back to Offline summarizer.",
         );
         try {
@@ -177,10 +182,15 @@ export default function NoteDetailScreen() {
     } catch (err) {
       console.error(`[${ai.label}] generateFlashcards failed:`, err);
 
-      // Fallback to offline if Gemini failed
-      if (settings.aiProvider === "gemini") {
+      // Fallback to offline if Gemini or HuggingFace failed
+      if (
+        settings.aiProvider === "gemini" ||
+        settings.aiProvider === "huggingface"
+      ) {
+        const providerLabel =
+          settings.aiProvider === "gemini" ? "Gemini" : "Hugging Face";
         Alert.alert(
-          "Gemini Unavailable",
+          `${providerLabel} Unavailable`,
           "Falling back to Offline flashcard generator.",
         );
         try {

@@ -190,6 +190,34 @@ function emptySummary(): AiSummaryResult {
   };
 }
 
+/**
+ * Ensures every array field in a parsed summary is actually an array.
+ * The LLM sometimes returns `null` for fields it couldn't populate instead
+ * of an empty array, which causes runtime crashes when components call
+ * `.length` / `.map()` on those values.
+ */
+function normalizeSummaryResult(
+  raw: Partial<AiSummaryResult>,
+): AiSummaryResult {
+  const empty = emptySummary();
+  return {
+    tldr: Array.isArray(raw.tldr) ? raw.tldr : empty.tldr,
+    keyPoints: Array.isArray(raw.keyPoints) ? raw.keyPoints : empty.keyPoints,
+    decisions: Array.isArray(raw.decisions) ? raw.decisions : empty.decisions,
+    actionItems: Array.isArray(raw.actionItems)
+      ? raw.actionItems
+      : empty.actionItems,
+    openQuestions: Array.isArray(raw.openQuestions)
+      ? raw.openQuestions
+      : empty.openQuestions,
+    topics: Array.isArray(raw.topics) ? raw.topics : empty.topics,
+    highlights: Array.isArray(raw.highlights)
+      ? raw.highlights
+      : empty.highlights,
+    followUps: Array.isArray(raw.followUps) ? raw.followUps : empty.followUps,
+  };
+}
+
 function mergeSummaries(parts: AiSummaryResult[]): AiSummaryResult {
   const merged = emptySummary();
   for (const p of parts) {
@@ -232,7 +260,9 @@ export function createHuggingFaceProvider(apiKey: string): IAiProvider {
             content: `User name: ${userName}\n\nTranscript:\n${transcript}`,
           },
         ]);
-        return parseJSONSafe<AiSummaryResult>(text, emptySummary());
+        return normalizeSummaryResult(
+          parseJSONSafe<Partial<AiSummaryResult>>(text, emptySummary()),
+        );
       }
 
       const partials: AiSummaryResult[] = [];
@@ -244,7 +274,11 @@ export function createHuggingFaceProvider(apiKey: string): IAiProvider {
             content: `User name: ${userName}\n\nTranscript (part):\n${chunk}`,
           },
         ]);
-        partials.push(parseJSONSafe<AiSummaryResult>(text, emptySummary()));
+        partials.push(
+          normalizeSummaryResult(
+            parseJSONSafe<Partial<AiSummaryResult>>(text, emptySummary()),
+          ),
+        );
       }
       return mergeSummaries(partials);
     },
