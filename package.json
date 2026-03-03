@@ -17,6 +17,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@google/generative-ai": "^0.24.0",
     "@react-navigation/bottom-tabs": "^7.3.10",
+    "@sentry/react-native": "^6.3.0",
     "@react-navigation/elements": "^2.9.5",
     "@react-navigation/native": "^7.1.6",
     "expo": "~54.0.33",

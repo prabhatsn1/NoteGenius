@@ -6,6 +6,7 @@
  *   const summary  = await provider.summarize(transcript, userName);
  */
 import type { AIProvider } from "../../types/models";
+import { addAiBreadcrumb, setAiProviderTag } from "../monitoring/sentry";
 import type { IAiProvider } from "./AiProvider";
 import { createGeminiProvider } from "./gemini/GeminiProvider";
 import { createHuggingFaceProvider } from "./huggingface/HuggingFaceProvider";
@@ -33,8 +34,15 @@ export function makeAiProvider(
       console.warn(
         "[makeAiProvider] Gemini selected but no API key – falling back to Offline.",
       );
+      setAiProviderTag("offline");
+      addAiBreadcrumb("Provider fallback: Gemini→Offline (no API key)");
       return OfflineProvider;
     }
+    setAiProviderTag("gemini");
+    addAiBreadcrumb("AI provider initialised", {
+      provider: "gemini",
+      model: modelName,
+    });
     return createGeminiProvider(apiKey, modelName);
   }
 
@@ -43,10 +51,15 @@ export function makeAiProvider(
       console.warn(
         "[makeAiProvider] HuggingFace selected but no API token – falling back to Offline.",
       );
+      setAiProviderTag("offline");
+      addAiBreadcrumb("Provider fallback: HuggingFace→Offline (no API token)");
       return OfflineProvider;
     }
+    setAiProviderTag("huggingface");
+    addAiBreadcrumb("AI provider initialised", { provider: "huggingface" });
     return createHuggingFaceProvider(apiKey);
   }
 
+  setAiProviderTag("offline");
   return OfflineProvider;
 }

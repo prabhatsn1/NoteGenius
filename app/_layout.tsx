@@ -15,16 +15,24 @@ import "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme } from "../hooks/use-color-scheme";
 import { getDatabase } from "../src/data/database";
+import {
+  Sentry,
+  initSentry,
+  setSentryUser,
+} from "../src/services/monitoring/sentry";
 import SetupScreen from "../src/screens/SetupScreen";
 import { useUserStore } from "../src/store/useUserStore";
+
+// Initialise Sentry as early as possible so startup errors are captured.
+initSentry();
 
 export const unstable_settings = {
   anchor: "(tabs)",
 };
 
-export default function RootLayout() {
+function RootLayout() {
   const colorScheme = useColorScheme();
-  const { isSetupComplete, loadProfile } = useUserStore();
+  const { isSetupComplete, loadProfile, profile } = useUserStore();
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
@@ -36,6 +44,11 @@ export default function RootLayout() {
     }
     init();
   }, []);
+
+  // Tag Sentry events with the user's display name (no PII beyond what they entered).
+  useEffect(() => {
+    if (profile?.name) setSentryUser(profile.name);
+  }, [profile?.name]);
 
   // Show setup screen on first launch
   if (dbReady && !isSetupComplete) {
@@ -62,3 +75,6 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// Wrap with Sentry's error boundary so unhandled JS crashes are reported.
+export default Sentry.wrap(RootLayout);

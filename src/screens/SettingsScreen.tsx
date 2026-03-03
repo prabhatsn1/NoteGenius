@@ -30,6 +30,11 @@ import {
   HF_PRIMARY_MODEL,
   HF_FALLBACK_MODEL,
 } from "../services/ai/huggingface/HuggingFaceProvider";
+import {
+  addAppBreadcrumb,
+  captureError,
+  setAiProviderTag,
+} from "../services/monitoring/sentry";
 import { useSettingsStore } from "../store/useSettingsStore";
 import { useUserStore } from "../store/useUserStore";
 import type { AIProvider } from "../types/models";
@@ -411,6 +416,7 @@ export default function SettingsScreen() {
       return;
     }
     saveProfile({ name: name.trim(), phone: phone.trim() });
+    addAppBreadcrumb("profile saved");
     Alert.alert("Saved", "Profile updated successfully.");
   }, [name, phone]);
 
@@ -432,6 +438,8 @@ export default function SettingsScreen() {
         setShowPrivacyModal(true);
         return;
       }
+      addAppBreadcrumb("AI provider changed", { provider });
+      setAiProviderTag(provider);
       setAIProvider(provider);
       setUserAIProvider(provider);
     },
@@ -448,6 +456,10 @@ export default function SettingsScreen() {
       acknowledgeHuggingFacePrivacy();
     }
     if (pendingProvider) {
+      addAppBreadcrumb("privacy notice accepted", {
+        provider: pendingProvider,
+      });
+      setAiProviderTag(pendingProvider);
       setAIProvider(pendingProvider);
       setUserAIProvider(pendingProvider);
     }
@@ -472,6 +484,9 @@ export default function SettingsScreen() {
     try {
       const result = await validateGeminiApiKey(trimmed);
       if (!result.valid) {
+        addAppBreadcrumb("Gemini API key validation failed", {
+          error: result.error,
+        });
         setKeyValidationError(
           result.error ?? "The key was rejected by the Gemini API.",
         );
@@ -480,10 +495,14 @@ export default function SettingsScreen() {
       await setGeminiApiKey(trimmed);
       setApiKey("");
       setKeyValidationError(null);
+      addAppBreadcrumb("Gemini API key saved");
       Alert.alert(
         "Saved",
         "Gemini API key verified and stored securely on device.",
       );
+    } catch (err) {
+      captureError(err, { context: "handleSaveApiKey" });
+      throw err;
     } finally {
       setIsSavingKey(false);
     }
@@ -500,6 +519,8 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             await deleteGeminiApiKey();
+            addAppBreadcrumb("Gemini API key deleted");
+            setAiProviderTag("offline");
             setAIProvider("offline");
             setUserAIProvider("offline");
             Alert.alert("Removed", "API key deleted. Provider set to Offline.");
@@ -521,6 +542,9 @@ export default function SettingsScreen() {
     try {
       const result = await validateHuggingFaceApiKey(trimmed);
       if (!result.valid) {
+        addAppBreadcrumb("HuggingFace API token validation failed", {
+          error: result.error,
+        });
         setHfKeyValidationError(
           result.error ?? "The token was rejected by the Hugging Face API.",
         );
@@ -529,10 +553,14 @@ export default function SettingsScreen() {
       await setHuggingFaceApiKey(trimmed);
       setHfApiKey("");
       setHfKeyValidationError(null);
+      addAppBreadcrumb("HuggingFace API token saved");
       Alert.alert(
         "Saved",
         "Hugging Face API token verified and stored securely on device.",
       );
+    } catch (err) {
+      captureError(err, { context: "handleSaveHfApiKey" });
+      throw err;
     } finally {
       setIsSavingHfKey(false);
     }
@@ -549,6 +577,8 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             await deleteHuggingFaceApiKey();
+            addAppBreadcrumb("HuggingFace API token deleted");
+            setAiProviderTag("offline");
             setAIProvider("offline");
             setUserAIProvider("offline");
             Alert.alert(
@@ -563,9 +593,12 @@ export default function SettingsScreen() {
 
   // ─── Export ───────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
+    addAppBreadcrumb("data export started");
     try {
       await ExportService.exportData();
+      addAppBreadcrumb("data export completed");
     } catch (e) {
+      captureError(e, { context: "handleExport" });
       Alert.alert("Export Error", String(e));
     }
   }, []);
@@ -581,6 +614,7 @@ export default function SettingsScreen() {
           text: "Clear Everything",
           style: "destructive",
           onPress: () => {
+            addAppBreadcrumb("all data cleared by user");
             SettingsRepo.clearAll();
             Alert.alert(
               "Done",
