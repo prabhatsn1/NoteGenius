@@ -34,7 +34,7 @@ import {
   addAppBreadcrumb,
   captureError,
   setAiProviderTag,
-} from "../services/monitoring/sentry";
+} from "../services/monitoring/analytics";
 import { useSettingsStore } from "../store/useSettingsStore";
 import { useUserStore } from "../store/useUserStore";
 import type { AIProvider } from "../types/models";
