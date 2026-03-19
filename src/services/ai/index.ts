@@ -6,7 +6,7 @@
  *   const summary  = await provider.summarize(transcript, userName);
  */
 import type { AIProvider } from "../../types/models";
-import { addAiBreadcrumb, setAiProviderTag } from "../monitoring/sentry";
+import { addAiBreadcrumb, setAiProviderTag } from "../monitoring/analytics";
 import type { IAiProvider } from "./AiProvider";
 import { createGeminiProvider } from "./gemini/GeminiProvider";
 import { createHuggingFaceProvider } from "./huggingface/HuggingFaceProvider";

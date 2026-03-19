@@ -16,7 +16,7 @@ import {
   addAiBreadcrumb,
   captureAiError,
   traceAiOperation,
-} from "../../monitoring/sentry";
+} from "../../monitoring/analytics";
 import type {
   AiFlashcardResult,
   AiSummaryResult,
