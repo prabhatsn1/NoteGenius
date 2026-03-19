@@ -16,15 +16,14 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme } from "../hooks/use-color-scheme";
 import { getDatabase } from "../src/data/database";
 import {
-  Sentry,
-  initSentry,
-  setSentryUser,
-} from "../src/services/monitoring/sentry";
+  initAnalytics,
+  setAnalyticsUser,
+} from "../src/services/monitoring/analytics";
 import SetupScreen from "../src/screens/SetupScreen";
 import { useUserStore } from "../src/store/useUserStore";
 
-// Initialise Sentry as early as possible so startup errors are captured.
-initSentry();
+// Initialise Firebase Analytics & Crashlytics as early as possible.
+initAnalytics();
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -45,9 +44,9 @@ function RootLayout() {
     init();
   }, []);
 
-  // Tag Sentry events with the user's display name (no PII beyond what they entered).
+  // Tag analytics events with the user's display name (no PII beyond what they entered).
   useEffect(() => {
-    if (profile?.name) setSentryUser(profile.name);
+    if (profile?.name) setAnalyticsUser(profile.name);
   }, [profile?.name]);
 
   // Show setup screen on first launch
@@ -76,5 +75,4 @@ function RootLayout() {
   );
 }
 
-// Wrap with Sentry's error boundary so unhandled JS crashes are reported.
-export default Sentry.wrap(RootLayout);
+export default RootLayout;
