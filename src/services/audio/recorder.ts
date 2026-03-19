@@ -17,7 +17,7 @@ import {
   setAudioModeAsync,
 } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
-import { addAudioBreadcrumb, captureAudioError } from "../monitoring/sentry";
+import { addAudioBreadcrumb, captureAudioError } from "../monitoring/analytics";
 
 /** Recording quality preset optimized for voice. */
 const RECORDING_OPTIONS: RecordingOptions = {
