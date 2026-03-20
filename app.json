@@ -64,10 +64,7 @@
         {
           "microphonePermission": "NoteGenius needs microphone access to record voice notes."
         }
-      ],
-      "@react-native-firebase/app",
-      "@react-native-firebase/analytics",
-      "@react-native-firebase/crashlytics"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
