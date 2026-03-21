@@ -96,7 +96,7 @@ export async function closeDatabase(): Promise<void> {
 
 // ─── Migrations ─────────────────────────────────────────────────────────────
 
-const CURRENT_DB_VERSION = 3;
+const CURRENT_DB_VERSION = 4;
 
 /**
  * Run schema / data migrations keyed by PRAGMA user_version.
@@ -118,17 +118,36 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
   if (version < 2) {
     // v2: Add tags (JSON array) and isPinned (boolean) to notes
-    await db.execAsync(`
-      ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
-      ALTER TABLE notes ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0;
-    `);
+    // Check if columns exist first to avoid duplicate column error
+    const tableInfo = await db.getAllAsync<{ name: string }>(
+      "PRAGMA table_info(notes);"
+    );
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('tags')) {
+      await db.execAsync(`
+        ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+      `);
+    }
+    if (!columnNames.includes('isPinned')) {
+      await db.execAsync(`
+        ALTER TABLE notes ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
   }
 
   if (version < 3) {
     // v3: Add isArchived (boolean) to notes
-    await db.execAsync(`
-      ALTER TABLE notes ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0;
-    `);
+    const tableInfo = await db.getAllAsync<{ name: string }>(
+      "PRAGMA table_info(notes);"
+    );
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('isArchived')) {
+      await db.execAsync(`
+        ALTER TABLE notes ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
   }
 
   if (version < CURRENT_DB_VERSION) {

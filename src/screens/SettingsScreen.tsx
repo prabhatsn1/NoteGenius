@@ -70,7 +70,7 @@ type GeminiErrorHelp = {
 };
 
 function getGeminiErrorHelp(error: string): GeminiErrorHelp {
-  const msg = error.toLowerCase();
+  const msg = (error || "").toLowerCase();
 
   if (
     msg.includes("api key not valid") ||
@@ -169,8 +169,8 @@ function getGeminiErrorHelp(error: string): GeminiErrorHelp {
 
 // ─── HuggingFace key error help ──────────────────────────────────────────────
 
-function getHuggingFaceErrorHelp(error: string): GeminiErrorHelp {
-  const msg = error.toLowerCase();
+function getHuggingFaceErrorHelp(error?: string): GeminiErrorHelp {
+  const msg = String(error || "").toLowerCase();
 
   if (
     msg.includes("invalid") ||
@@ -340,7 +340,12 @@ export default function SettingsScreen() {
       } else {
         const body = await res.json().catch(() => ({}));
         setGeminiStatus("error");
-        setGeminiError(body?.error?.message ?? `HTTP ${res.status}`);
+        const errorMsg = typeof body?.error?.message === 'string'
+          ? body.error.message
+          : body?.error
+            ? JSON.stringify(body.error)
+            : `HTTP ${res.status}`;
+        setGeminiError(errorMsg);
       }
     } catch (e: unknown) {
       setGeminiStatus("error");
@@ -389,9 +394,14 @@ export default function SettingsScreen() {
       if (res.ok || res.status === 429 || res.status === 503) {
         setHfStatus("connected");
       } else {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        const body = (await res.json().catch(() => ({}))) as { error?: unknown };
         setHfStatus("error");
-        setHfError(body?.error ?? `HTTP ${res.status}`);
+        const errorMsg = typeof body?.error === 'string' 
+          ? body.error 
+          : body?.error 
+            ? JSON.stringify(body.error) 
+            : `HTTP ${res.status}`;
+        setHfError(errorMsg);
       }
     } catch (e: unknown) {
       setHfStatus("error");
@@ -487,9 +497,12 @@ export default function SettingsScreen() {
         addAppBreadcrumb("Gemini API key validation failed", {
           error: result.error,
         });
-        setKeyValidationError(
-          result.error ?? "The key was rejected by the Gemini API.",
-        );
+        const errorMsg = typeof result.error === 'string'
+          ? result.error
+          : result.error
+            ? JSON.stringify(result.error)
+            : "The key was rejected by the Gemini API.";
+        setKeyValidationError(errorMsg);
         return;
       }
       await setGeminiApiKey(trimmed);
@@ -545,9 +558,12 @@ export default function SettingsScreen() {
         addAppBreadcrumb("HuggingFace API token validation failed", {
           error: result.error,
         });
-        setHfKeyValidationError(
-          result.error ?? "The token was rejected by the Hugging Face API.",
-        );
+        const errorMsg = typeof result.error === 'string'
+          ? result.error
+          : result.error
+            ? JSON.stringify(result.error)
+            : "The token was rejected by the Hugging Face API.";
+        setHfKeyValidationError(errorMsg);
         return;
       }
       await setHuggingFaceApiKey(trimmed);

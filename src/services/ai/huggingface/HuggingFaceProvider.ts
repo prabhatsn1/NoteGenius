@@ -431,10 +431,15 @@ export async function validateHuggingFaceApiKey(
       return { valid: true };
     }
 
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    const errorMsg = typeof body?.error === 'string'
+      ? body.error
+      : body?.error
+        ? JSON.stringify(body.error)
+        : `HTTP ${res.status}`;
     return {
       valid: false,
-      error: body?.error ?? `HTTP ${res.status}`,
+      error: errorMsg,
     };
   } catch (e: unknown) {
     return {

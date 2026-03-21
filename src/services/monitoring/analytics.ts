@@ -13,8 +13,16 @@
  * Import:
  *   import { initAnalytics, captureAiError, logAiEvent } from '@/src/services/monitoring/analytics';
  */
-import analytics from "@react-native-firebase/analytics";
-import crashlytics from "@react-native-firebase/crashlytics";
+// Firebase imports - only available after prebuild
+let analytics: any = null;
+let crashlytics: any = null;
+
+try {
+  analytics = require("@react-native-firebase/analytics").default;
+  crashlytics = require("@react-native-firebase/crashlytics").default;
+} catch {
+  // Firebase not available - running in Expo Go or not configured
+}
 
 // ---------------------------------------------------------------------------
 // Initialisation
@@ -25,6 +33,7 @@ import crashlytics from "@react-native-firebase/crashlytics";
  * Call once at the very top of app/_layout.tsx.
  */
 export async function initAnalytics(): Promise<void> {
+  if (!analytics || !crashlytics) return;
   try {
     await analytics().setAnalyticsCollectionEnabled(!__DEV__);
     await crashlytics().setCrashlyticsCollectionEnabled(!__DEV__);
@@ -39,6 +48,7 @@ export async function initAnalytics(): Promise<void> {
 
 /** Set the display name shown on every analytics event & crash report. */
 export async function setAnalyticsUser(name: string): Promise<void> {
+  if (!analytics || !crashlytics) return;
   try {
     await analytics().setUserId(name);
     await crashlytics().setUserId(name);
@@ -49,6 +59,7 @@ export async function setAnalyticsUser(name: string): Promise<void> {
 
 /** Clear any previously stored user identity. */
 export async function clearAnalyticsUser(): Promise<void> {
+  if (!analytics || !crashlytics) return;
   try {
     await analytics().setUserId("");
     await crashlytics().setUserId("");
@@ -59,6 +70,7 @@ export async function clearAnalyticsUser(): Promise<void> {
 
 /** Set the active AI provider as a global user property so it appears on every event. */
 export async function setAiProviderTag(provider: string): Promise<void> {
+  if (!analytics || !crashlytics) return;
   try {
     await analytics().setUserProperty("ai_provider", provider);
     await crashlytics().setAttribute("ai_provider", provider);
@@ -79,6 +91,7 @@ export async function logAiEvent(
   eventName: string,
   params?: Record<string, string | number | boolean>,
 ): Promise<void> {
+  if (!analytics || !crashlytics) return;
   try {
     await analytics().logEvent(`ai_${eventName}`, params);
     crashlytics().log(`[AI] ${eventName}: ${JSON.stringify(params ?? {})}`);
@@ -92,6 +105,7 @@ export async function logAudioEvent(
   eventName: string,
   params?: Record<string, string | number | boolean>,
 ): Promise<void> {
+  if (!analytics || !crashlytics) return;
   try {
     await analytics().logEvent(`audio_${eventName}`, params);
     crashlytics().log(`[Audio] ${eventName}: ${JSON.stringify(params ?? {})}`);
@@ -105,6 +119,7 @@ export async function logAppEvent(
   eventName: string,
   params?: Record<string, string | number | boolean>,
 ): Promise<void> {
+  if (!analytics || !crashlytics) return;
   try {
     await analytics().logEvent(`app_${eventName}`, params);
     crashlytics().log(`[App] ${eventName}: ${JSON.stringify(params ?? {})}`);
@@ -122,6 +137,7 @@ export function addAiBreadcrumb(
   message: string,
   data?: Record<string, unknown>,
 ): void {
+  if (!analytics || !crashlytics) return;
   try {
     crashlytics().log(`[AI] ${message} ${data ? JSON.stringify(data) : ""}`);
     // Also fire an analytics event so it's visible in the dashboard
@@ -142,6 +158,7 @@ export function addAudioBreadcrumb(
   message: string,
   data?: Record<string, unknown>,
 ): void {
+  if (!crashlytics) return;
   try {
     crashlytics().log(`[Audio] ${message} ${data ? JSON.stringify(data) : ""}`);
   } catch {
@@ -153,6 +170,7 @@ export function addAppBreadcrumb(
   message: string,
   data?: Record<string, unknown>,
 ): void {
+  if (!crashlytics) return;
   try {
     crashlytics().log(`[App] ${message} ${data ? JSON.stringify(data) : ""}`);
   } catch {
@@ -188,6 +206,7 @@ export function captureAiError(
     httpStatus?: number;
   },
 ): void {
+  if (!analytics || !crashlytics) return;
   try {
     const err = toError(error);
 
@@ -221,6 +240,7 @@ export function captureAiError(
 
 /** Capture an error that originated in the audio recording/playback layer. */
 export function captureAudioError(error: unknown, operation: string): void {
+  if (!analytics || !crashlytics) return;
   try {
     const err = toError(error);
     crashlytics().setAttribute("audio_operation", operation);
@@ -241,6 +261,7 @@ export function captureError(
   error: unknown,
   extras?: Record<string, unknown>,
 ): void {
+  if (!analytics || !crashlytics) return;
   try {
     const err = toError(error);
     if (extras) {
@@ -280,29 +301,35 @@ export async function traceAiOperation<T>(
   const startTime = Date.now();
 
   try {
-    crashlytics().log(
-      `[AI Trace] ${provider}/${operationName} started`,
-    );
+    if (crashlytics) {
+      crashlytics().log(
+        `[AI Trace] ${provider}/${operationName} started`,
+      );
+    }
 
     const result = await fn();
     const durationMs = Date.now() - startTime;
 
-    analytics().logEvent("ai_operation_success", {
-      provider,
-      operation: operationName,
-      duration_ms: durationMs,
-    });
+    if (analytics) {
+      analytics().logEvent("ai_operation_success", {
+        provider,
+        operation: operationName,
+        duration_ms: durationMs,
+      });
+    }
 
     return result;
   } catch (error) {
     const durationMs = Date.now() - startTime;
 
-    analytics().logEvent("ai_operation_failure", {
-      provider,
-      operation: operationName,
-      duration_ms: durationMs,
-      error_message: toError(error).message.slice(0, 100),
-    });
+    if (analytics) {
+      analytics().logEvent("ai_operation_failure", {
+        provider,
+        operation: operationName,
+        duration_ms: durationMs,
+        error_message: toError(error).message.slice(0, 100),
+      });
+    }
 
     throw error;
   }

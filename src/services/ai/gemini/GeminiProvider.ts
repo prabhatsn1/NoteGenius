@@ -282,11 +282,18 @@ export async function validateGeminiApiKey(
       return { valid: true };
     }
     const body = (await res.json().catch(() => ({}))) as {
-      error?: { message?: string };
+      error?: { message?: string } | string;
     };
+    const errorMsg = typeof body?.error === 'string'
+      ? body.error
+      : typeof body?.error?.message === 'string'
+        ? body.error.message
+        : body?.error
+          ? JSON.stringify(body.error)
+          : `HTTP ${res.status}`;
     return {
       valid: false,
-      error: body?.error?.message ?? `HTTP ${res.status}`,
+      error: errorMsg,
     };
   } catch (e: unknown) {
     return {

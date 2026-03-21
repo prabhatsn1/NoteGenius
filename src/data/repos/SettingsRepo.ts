@@ -2,12 +2,77 @@
  * NoteGenius – Settings repository using MMKV for fast key-value storage.
  * Stores user profile, AI provider settings, and recording prefs.
  * Gemini API key is stored in expo-secure-store (encrypted) – never in MMKV.
+ * Falls back to AsyncStorage if MMKV is not available (Expo Go).
  */
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
-import { createMMKV } from "react-native-mmkv";
 import type { AppSettings, UserProfile } from "../../types/models";
 
-const storage = createMMKV({ id: "notegenius-settings" });
+// Try to load MMKV, fall back to AsyncStorage if not available
+let storage: any = null;
+let useMMKV = false;
+
+try {
+  const { createMMKV } = require("react-native-mmkv");
+  storage = createMMKV({ id: "notegenius-settings" });
+  useMMKV = true;
+} catch {
+  // MMKV not available - will use AsyncStorage fallback
+  useMMKV = false;
+}
+
+// Storage adapter that works with both MMKV and AsyncStorage
+const storageAdapter = {
+  getString(key: string): string | undefined {
+    if (useMMKV) {
+      return storage.getString(key);
+    }
+    // AsyncStorage is async, but we need sync API - use cached values
+    const cached = asyncStorageCache.get(key);
+    return cached;
+  },
+  
+  set(key: string, value: string | boolean): void {
+    if (useMMKV) {
+      storage.set(key, value);
+    } else {
+      asyncStorageCache.set(key, String(value));
+      AsyncStorage.setItem(key, String(value)).catch(() => {});
+    }
+  },
+  
+  getBoolean(key: string): boolean | undefined {
+    if (useMMKV) {
+      return storage.getBoolean(key);
+    }
+    const cached = asyncStorageCache.get(key);
+    return cached === "true";
+  },
+  
+  clearAll(): void {
+    if (useMMKV) {
+      storage.clearAll();
+    } else {
+      asyncStorageCache.clear();
+      AsyncStorage.clear().catch(() => {});
+    }
+  },
+};
+
+// In-memory cache for AsyncStorage (since we need sync API)
+const asyncStorageCache = new Map<string, string>();
+
+// Initialize AsyncStorage cache on module load
+if (!useMMKV) {
+  AsyncStorage.getAllKeys()
+    .then((keys) => AsyncStorage.multiGet(keys))
+    .then((entries) => {
+      entries.forEach(([key, value]) => {
+        if (value) asyncStorageCache.set(key, value);
+      });
+    })
+    .catch(() => {});
+}
 
 const KEYS = {
   USER_PROFILE: "user.profile",
@@ -33,17 +98,17 @@ const DEFAULT_SETTINGS: AppSettings = {
 export const SettingsRepo = {
   // ─── User Profile ───────────────────────────────────────────────────────
   getUserProfile(): UserProfile | null {
-    const raw = storage.getString(KEYS.USER_PROFILE);
+    const raw = storageAdapter.getString(KEYS.USER_PROFILE);
     return raw ? (JSON.parse(raw) as UserProfile) : null;
   },
 
   setUserProfile(profile: UserProfile): void {
-    storage.set(KEYS.USER_PROFILE, JSON.stringify(profile));
+    storageAdapter.set(KEYS.USER_PROFILE, JSON.stringify(profile));
   },
 
   // ─── App Settings ──────────────────────────────────────────────────────
   getSettings(): AppSettings {
-    const raw = storage.getString(KEYS.SETTINGS);
+    const raw = storageAdapter.getString(KEYS.SETTINGS);
     if (!raw) return { ...DEFAULT_SETTINGS };
     return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } as AppSettings;
   },
@@ -51,7 +116,7 @@ export const SettingsRepo = {
   setSettings(settings: Partial<AppSettings>): void {
     const current = SettingsRepo.getSettings();
     const updated = { ...current, ...settings };
-    storage.set(KEYS.SETTINGS, JSON.stringify(updated));
+    storageAdapter.set(KEYS.SETTINGS, JSON.stringify(updated));
   },
 
   /** Mark setup as complete after the first-launch wizard. */
@@ -64,26 +129,26 @@ export const SettingsRepo = {
     return SettingsRepo.getSettings().setupComplete;
   },
 
-  // ─── Generic MMKV Access ──────────────────────────────────────────────
+  // ─── Generic Storage Access ──────────────────────────────────────────────
   getString(key: string): string | undefined {
-    return storage.getString(key);
+    return storageAdapter.getString(key);
   },
 
   setString(key: string, value: string): void {
-    storage.set(key, value);
+    storageAdapter.set(key, value);
   },
 
   getBoolean(key: string): boolean {
-    return storage.getBoolean(key) ?? false;
+    return storageAdapter.getBoolean(key) ?? false;
   },
 
   setBoolean(key: string, value: boolean): void {
-    storage.set(key, value);
+    storageAdapter.set(key, value);
   },
 
   /** Clear all data (for "Clear data" in settings). */
   clearAll(): void {
-    storage.clearAll();
+    storageAdapter.clearAll();
     SecureStore.deleteItemAsync(SECURE_KEYS.GEMINI_API_KEY).catch(() => {});
     SecureStore.deleteItemAsync(SECURE_KEYS.HUGGINGFACE_API_KEY).catch(
       () => {},
