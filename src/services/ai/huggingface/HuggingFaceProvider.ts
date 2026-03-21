@@ -25,7 +25,8 @@ import type {
 
 // ─── Model IDs ───────────────────────────────────────────────────────────────
 
-export const HF_PRIMARY_MODEL = "mistralai/Mistral-7B-Instruct-v0.2";
+export const HF_PRIMARY_MODEL =
+  "mistralai/Mistral-7B-Instruct-v0.2:featherless-ai";
 export const HF_FALLBACK_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct";
 
 const HF_CHAT_URL = "https://router.huggingface.co/v1/chat/completions";
@@ -405,7 +406,7 @@ export async function validateHuggingFaceApiKey(
       },
       body: JSON.stringify({
         model: HF_PRIMARY_MODEL,
-        messages: [{ role: "user", content: "ping" }],
+        messages: [{ role: "user", content: "hi" }],
         max_tokens: 1,
         stream: false,
       }),
@@ -432,16 +433,18 @@ export async function validateHuggingFaceApiKey(
     }
 
     const body = (await res.json().catch(() => ({}))) as { error?: unknown };
-    const errorMsg = typeof body?.error === 'string'
-      ? body.error
-      : body?.error
-        ? JSON.stringify(body.error)
-        : `HTTP ${res.status}`;
+    const errorMsg =
+      typeof body?.error === "string"
+        ? body.error
+        : body?.error
+          ? JSON.stringify(body.error)
+          : `HTTP ${res.status}`;
     return {
       valid: false,
       error: errorMsg,
     };
   } catch (e: unknown) {
+    console.warn("[HuggingFaceProvider] validateApiKey failed:", e);
     return {
       valid: false,
       error: e instanceof Error ? e.message : "Network error",

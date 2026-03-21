@@ -56,6 +56,14 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
   private lastPartialText: string = "";
 
   async start(_locale: string): Promise<void> {
+    // Check if native module is available
+    if (!startListening || !addEventListener) {
+      const error = "Speech recognition native module not initialized. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
+      console.error("[SpeechRecognitionKit]", error);
+      this.onError?.(error);
+      return;
+    }
+
     // Reset state for a fresh session.
     // NOTE: setRecognitionLanguage is not implemented natively; the recogniser
     // always uses the device locale (NSLocale.currentLocale).
@@ -123,7 +131,14 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
       }),
     );
 
-    await startListening();
+    try {
+      await startListening();
+    } catch (err) {
+      const error = "Speech recognition failed to start. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
+      console.error("[SpeechRecognitionKit]", error, err);
+      this.onError?.(error);
+      this._endSession();
+    }
   }
 
   async stop(_audioUri?: string): Promise<void> {
@@ -139,7 +154,11 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
       // native method has no resolve/reject blocks, so treat the return value as
       // unreliable and fall back to the onSpeechEnd event to close the session.
       try {
-        Promise.resolve(stopListening()).catch(() => this._endSession());
+        if (stopListening) {
+          Promise.resolve(stopListening()).catch(() => this._endSession());
+        } else {
+          this._endSession();
+        }
       } catch {
         this._endSession();
       }
@@ -148,7 +167,11 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
 
   async cancel(): Promise<void> {
     this._removeListeners();
-    await Promise.resolve(destroyRecognizer()).catch(() => {});
+    try {
+      if (destroyRecognizer) {
+        await Promise.resolve(destroyRecognizer()).catch(() => {});
+      }
+    } catch {}
     this._endSession();
   }
 
@@ -161,7 +184,11 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
 
   async destroy(): Promise<void> {
     this._removeListeners();
-    await Promise.resolve(destroyRecognizer()).catch(() => {});
+    try {
+      if (destroyRecognizer) {
+        await Promise.resolve(destroyRecognizer()).catch(() => {});
+      }
+    } catch {}
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

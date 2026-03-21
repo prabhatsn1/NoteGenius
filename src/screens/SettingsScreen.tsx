@@ -375,7 +375,7 @@ export default function SettingsScreen() {
     setHfError(null);
     try {
       const res = await fetch(
-        "https://api-inference.huggingface.co/v1/chat/completions",
+        "https://router.huggingface.co/v1/chat/completions",
         {
           method: "POST",
           headers: {
