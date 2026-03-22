@@ -70,7 +70,7 @@ export const AudioRecorder = {
         isMeteringEnabled: true, // enables waveform amplitude
       });
       await recorder.prepareToRecordAsync();
-      recorder.record();
+      await recorder.record();
       return recorder;
     } catch (err) {
       console.error("[AudioRecorder] start error:", err);
@@ -82,13 +82,13 @@ export const AudioRecorder = {
   /** Pause recording. */
   async pause(): Promise<void> {
     if (!recorder) return;
-    recorder.pause();
+    await recorder.pause();
   },
 
   /** Resume after pause. */
   async resume(): Promise<void> {
     if (!recorder) return;
-    recorder.record();
+    await recorder.record();
   },
 
   /** Stop recording; returns the local file URI and duration. */

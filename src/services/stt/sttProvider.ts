@@ -4,6 +4,7 @@
  * Recognition starts immediately when recording begins and streams partial and
  * final results in real-time via native OS speech APIs.
  */
+import { NativeModules } from "react-native";
 import {
   addEventListener,
   destroy as destroyRecognizer,
@@ -15,6 +16,10 @@ import {
 // wrapper but NOT implemented in the native layer – calling them crashes.
 // The iOS recogniser always uses [NSLocale currentLocale]; locale is tracked
 // only on the JS side for segment metadata.
+
+// Check if native module is available
+const { SpeechRecognition } = NativeModules;
+const isNativeModuleAvailable = SpeechRecognition != null;
 
 // ─── Provider Interface ──────────────────────────────────────────────────────
 export interface STTProvider {
@@ -57,7 +62,7 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
 
   async start(_locale: string): Promise<void> {
     // Check if native module is available
-    if (!startListening || !addEventListener) {
+    if (!isNativeModuleAvailable) {
       const error = "Speech recognition native module not initialized. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
       console.error("[SpeechRecognitionKit]", error);
       this.onError?.(error);
@@ -70,6 +75,7 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     this.isStopping = false;
     this.sessionEnded = false;
     this.stopResolve = null;
+    this.lastPartialText = "";
     this._removeListeners();
 
     // Partial results → stream live text to the UI.
@@ -103,20 +109,22 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     // Native emits { message: string, code?: number } for all error events.
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.ERROR, (event) => {
-        // Error 216 (kAFAssistantErrorDomain) is an audio device
-        // reconfiguration interrupt that fires in the iOS Simulator when
-        // the audio hardware is reset.  It is not a real speech error –
-        // just end the session silently.
-        // Check both numeric code field and the message string, because some
-        // native bridge versions only forward the message.
         const code: number | undefined =
           event?.code ?? event?.nativeEvent?.code;
         const rawMsg: string =
           event?.message ?? event?.error ?? JSON.stringify(event) ?? "";
+        
+        // Error 7: No speech match found – benign, occurs during silence/pauses
+        if (code === 7 || rawMsg.includes("No speech match")) {
+          return; // Ignore silently, keep session alive
+        }
+        
+        // Error 216: Audio device reconfiguration (iOS Simulator)
         if (code === 216 || rawMsg.includes("error 216")) {
           this._endSession();
           return;
         }
+        
         const msg = rawMsg || "Unknown STT error";
         console.error("[SpeechRecognitionKit] error:", msg, event);
         this.onError?.(msg);
@@ -154,7 +162,7 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
       // native method has no resolve/reject blocks, so treat the return value as
       // unreliable and fall back to the onSpeechEnd event to close the session.
       try {
-        if (stopListening) {
+        if (isNativeModuleAvailable) {
           Promise.resolve(stopListening()).catch(() => this._endSession());
         } else {
           this._endSession();
@@ -167,11 +175,11 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
 
   async cancel(): Promise<void> {
     this._removeListeners();
-    try {
-      if (destroyRecognizer) {
+    if (isNativeModuleAvailable) {
+      try {
         await Promise.resolve(destroyRecognizer()).catch(() => {});
-      }
-    } catch {}
+      } catch {}
+    }
     this._endSession();
   }
 
@@ -179,16 +187,16 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     // isRecognitionAvailable is not implemented natively – return true so the
     // UI can always attempt recognition (the native layer will emit an error if
     // speech permissions are denied).
-    return true;
+    return isNativeModuleAvailable;
   }
 
   async destroy(): Promise<void> {
     this._removeListeners();
-    try {
-      if (destroyRecognizer) {
+    if (isNativeModuleAvailable) {
+      try {
         await Promise.resolve(destroyRecognizer()).catch(() => {});
-      }
-    } catch {}
+      } catch {}
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

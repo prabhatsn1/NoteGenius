@@ -122,6 +122,15 @@ export default function RecordScreen() {
   // Extracted so it can be called on initial start AND after resume.
   const startSTT = useCallback(async () => {
     const stt = getSTTProvider();
+    const available = await stt.isAvailable();
+    if (!available) {
+      Alert.alert(
+        "Speech Recognition Unavailable",
+        "Live transcription requires a native build. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild' and 'npx expo run:ios'",
+        [{ text: "OK" }],
+      );
+      return;
+    }
     stt.onResult = (text, isFinal) => {
       setLiveTranscript(text);
       if (isFinal && text.trim()) {
@@ -145,7 +154,7 @@ export default function RecordScreen() {
       console.warn("[STT Error]", err);
     };
     await stt.start(languageCodeRef.current);
-  }, [addSessionSegment]);
+  }, [addSessionSegment, setLiveTranscript]);
 
   // ─── Start Recording ──────────────────────────────────────────────────
   const handleStart = useCallback(async () => {
@@ -154,6 +163,7 @@ export default function RecordScreen() {
 
     // Create a new note
     const note = await createNote("Untitled Recording", languageCode);
+    noteIdRef.current = note.id;
     setNoteId(note.id);
 
     // Start audio recording
@@ -166,7 +176,6 @@ export default function RecordScreen() {
     // Start live speech recognition (partial results arrive during recording;
     // final results are committed as segments when each utterance completes).
     lastCommittedTextRef.current = "";
-    noteIdRef.current = note.id;
     await startSTT();
 
     // Start timer
@@ -194,7 +203,7 @@ export default function RecordScreen() {
     }, AUTOSAVE_INTERVAL);
 
     setStatus("recording");
-  }, [languageCode, startSTT]);
+  }, [languageCode, startSTT, createNote, setNoteId, setElapsedMs, appendWaveform, setStatus]);
 
   // ─── Pause Recording ──────────────────────────────────────────────────
   const handlePause = useCallback(async () => {
@@ -207,7 +216,7 @@ export default function RecordScreen() {
     if (timerRef.current) clearInterval(timerRef.current);
     if (meteringRef.current) clearInterval(meteringRef.current);
     setStatus("paused");
-  }, []);
+  }, [setStatus]);
 
   // ─── Resume Recording ─────────────────────────────────────────────────
   const handleResume = useCallback(async () => {
@@ -228,7 +237,7 @@ export default function RecordScreen() {
       }
     }, 100);
     setStatus("recording");
-  }, [startSTT]);
+  }, [startSTT, setElapsedMs, appendWaveform, setStatus]);
 
   // ─── Stop Recording ───────────────────────────────────────────────────
   const handleStop = useCallback(async () => {
@@ -323,7 +332,7 @@ export default function RecordScreen() {
     // Navigate to note detail
     router.push(`/note/${freshNoteId}` as any);
     resetRecording();
-  }, []);
+  }, [setStatus, resetRecording, addSegments, updateNote, router]);
 
   // ─── Submit typed text ────────────────────────────────────────────────
   const handleSubmitTyped = useCallback(() => {
@@ -339,12 +348,12 @@ export default function RecordScreen() {
     };
     addSessionSegment(seg);
     setTypedText("");
-  }, [typedText, noteId]);
+  }, [typedText, noteId, addSessionSegment]);
 
   // ─── Mark Highlight ───────────────────────────────────────────────────
   const handleMarkHighlight = useCallback(() => {
     addHighlight(elapsedMs);
-  }, [elapsedMs]);
+  }, [elapsedMs, addHighlight]);
 
   const isRecording = status === "recording";
   const isPaused = status === "paused";
