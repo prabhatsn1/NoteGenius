@@ -7,9 +7,23 @@ import {
   requestRecordingPermissionsAsync,
 } from "expo-audio";
 import * as Notifications from "expo-notifications";
-import { Alert, Linking } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
+import { request, PERMISSIONS, RESULTS } from "react-native-permissions";
 
 export const Permissions = {
+  /** Request speech recognition permission (iOS only). */
+  async requestSpeechRecognition(): Promise<boolean> {
+    if (Platform.OS !== "ios") return true;
+    
+    try {
+      const result = await request(PERMISSIONS.IOS.SPEECH_RECOGNITION);
+      return result === RESULTS.GRANTED;
+    } catch (err) {
+      console.warn("[Permissions] Speech recognition request failed:", err);
+      return false;
+    }
+  },
+
   /** Request audio recording permission with friendly explainer. */
   async requestMicrophone(): Promise<boolean> {
     const { granted } = await getRecordingPermissionsAsync();

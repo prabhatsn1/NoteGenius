@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "NoteGenius needs microphone access to record voice notes.",
-        "NSSpeechRecognitionUsageDescription": "NoteGenius uses speech recognition to transcribe your voice notes."
+        "NSSpeechRecognitionUsageDescription": "NoteGenius uses speech recognition to transcribe your voice notes.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.prabhatsn1.notegenius"
     },
@@ -40,6 +41,7 @@
       "expo-router",
       "./plugins/withAndroidManifestFix",
       "./plugins/withExcludeSupportLibs",
+      "./plugins/withSpeechRecognition",
       [
         "expo-splash-screen",
         {

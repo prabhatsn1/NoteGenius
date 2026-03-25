@@ -121,8 +121,11 @@ export default function RecordScreen() {
   // ─── STT session setup ─────────────────────────────────────────────────
   // Extracted so it can be called on initial start AND after resume.
   const startSTT = useCallback(async () => {
+    console.log('[RecordScreen] startSTT called');
     const stt = getSTTProvider();
+    console.log('[RecordScreen] STT provider:', stt);
     const available = await stt.isAvailable();
+    console.log('[RecordScreen] STT available:', available);
     if (!available) {
       Alert.alert(
         "Speech Recognition Unavailable",
@@ -132,6 +135,7 @@ export default function RecordScreen() {
       return;
     }
     stt.onResult = (text, isFinal) => {
+      console.log('[RecordScreen] STT onResult:', { text, isFinal });
       setLiveTranscript(text);
       if (isFinal && text.trim()) {
         const elapsed =
@@ -146,6 +150,7 @@ export default function RecordScreen() {
           startMs: 0,
           endMs: elapsed,
         };
+        console.log('[RecordScreen] Adding segment:', seg);
         addSessionSegment(seg);
         setLiveTranscript("");
       }
@@ -153,7 +158,9 @@ export default function RecordScreen() {
     stt.onError = (err) => {
       console.warn("[STT Error]", err);
     };
+    console.log('[RecordScreen] Starting STT with locale:', languageCodeRef.current);
     await stt.start(languageCodeRef.current);
+    console.log('[RecordScreen] STT started');
   }, [addSessionSegment, setLiveTranscript]);
 
   // ─── Start Recording ──────────────────────────────────────────────────
@@ -161,22 +168,33 @@ export default function RecordScreen() {
     const hasPermission = await Permissions.requestMicrophone();
     if (!hasPermission) return;
 
+    // Request speech recognition permission (iOS)
+    const hasSpeechPermission = await Permissions.requestSpeechRecognition();
+    if (!hasSpeechPermission) {
+      Alert.alert(
+        "Speech Recognition Permission Required",
+        "NoteGenius needs speech recognition permission to transcribe your voice. The app will continue recording audio without transcription.",
+        [{ text: "OK" }]
+      );
+    }
+
     // Create a new note
     const note = await createNote("Untitled Recording", languageCode);
     noteIdRef.current = note.id;
     setNoteId(note.id);
 
-    // Start audio recording
+    // Start STT FIRST so it can claim the audio session before expo-audio.
+    // On iOS, starting the recorder first causes the speech recognizer to
+    // receive an immediate END event (audio session conflict).
+    lastCommittedTextRef.current = "";
+    await startSTT();
+
+    // Start audio recording after STT has initialized.
     const rec = await AudioRecorder.start();
     if (!rec) {
       Alert.alert("Error", "Failed to start recording.");
       return;
     }
-
-    // Start live speech recognition (partial results arrive during recording;
-    // final results are committed as segments when each utterance completes).
-    lastCommittedTextRef.current = "";
-    await startSTT();
 
     // Start timer
     startTimeRef.current = Date.now();
@@ -221,9 +239,9 @@ export default function RecordScreen() {
   // ─── Resume Recording ─────────────────────────────────────────────────
   const handleResume = useCallback(async () => {
     pausedDurationRef.current += Date.now() - pauseStartRef.current;
-    await AudioRecorder.resume();
-    // Restart STT with a fresh session – the previous one was cancelled on pause.
+    // Restart STT before resuming the recorder (same audio session ordering rule).
     await startSTT();
+    await AudioRecorder.resume();
     timerRef.current = setInterval(() => {
       setElapsedMs(
         Date.now() - startTimeRef.current - pausedDurationRef.current,
@@ -250,10 +268,18 @@ export default function RecordScreen() {
     const stt = getSTTProvider();
     await stt.stop(result?.uri);
 
+    // Wait for any final STT results to be committed to the store.
+    // The native layer may emit END without RESULTS, causing _endSession to
+    // flush the last partial text asynchronously. A short delay ensures that
+    // final segment is visible when we read the store.
+    await new Promise(resolve => setTimeout(resolve, 300));
+
     // Read fresh state – avoids stale-closure bug where segments added by the
     // onSpeechEnd callback (above awaits) are invisible to this function.
     const { noteId: freshNoteId, sessionSegments: freshSegments } =
       useRecordingStore.getState();
+    
+    console.log('[RecordScreen] handleStop - segments:', freshSegments);
 
     if (!freshNoteId) {
       setStatus("idle");

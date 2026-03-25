@@ -50,7 +50,7 @@ export const AudioRecorder = {
     await setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,
-      shouldPlayInBackground: true,
+      shouldPlayInBackground: false,
     });
     return true;
   },

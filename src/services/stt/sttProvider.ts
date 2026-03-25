@@ -61,6 +61,10 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
   private lastPartialText: string = "";
 
   async start(_locale: string): Promise<void> {
+    console.log('[STT] start called with locale:', _locale);
+    console.log('[STT] Native module available:', isNativeModuleAvailable);
+    console.log('[STT] SpeechRecognition module:', SpeechRecognition);
+    
     // Check if native module is available
     if (!isNativeModuleAvailable) {
       const error = "Speech recognition native module not initialized. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
@@ -77,17 +81,20 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     this.stopResolve = null;
     this.lastPartialText = "";
     this._removeListeners();
+    console.log('[STT] Setting up event listeners');
 
     // Partial results → stream live text to the UI.
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.PARTIAL_RESULTS, (event) => {
         const text = this._extractText(event);
+        console.log('[STT] PARTIAL_RESULTS:', text);
         if (text) {
           this.lastPartialText = text;
           this.onResult?.(text, false);
         }
       }),
     );
+    console.log('[STT] PARTIAL_RESULTS listener added');
 
     // Final results → commit the utterance as a finished segment.
     // Only end the session when stop() has been explicitly called; otherwise
@@ -95,6 +102,7 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.RESULTS, (event) => {
         const text = this._extractText(event);
+        console.log('[STT] RESULTS:', text, 'isStopping:', this.isStopping);
         if (text) {
           this.lastPartialText = ""; // final result supersedes any partial
           this.onResult?.(text, true);
@@ -104,6 +112,7 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
         }
       }),
     );
+    console.log('[STT] RESULTS listener added');
 
     // Error → report and close the session.
     // Native emits { message: string, code?: number } for all error events.
@@ -133,36 +142,56 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     );
 
     // END fires after RESULTS (or alone if no speech was detected).
+    // Only end the session if stop() has been explicitly called; otherwise
+    // iOS fires END after each utterance and we want to keep listening.
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.END, () => {
-        this._endSession();
+        console.log('[STT] END event, isStopping:', this.isStopping);
+        if (this.isStopping) {
+          this._endSession();
+        }
       }),
     );
 
     try {
-      await startListening();
+      console.log('[STT] Calling startListening()');
+      console.log('[STT] startListening function:', startListening);
+      const result = await startListening();
+      console.log('[STT] startListening() completed, result:', result);
     } catch (err) {
       const error = "Speech recognition failed to start. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
-      console.error("[SpeechRecognitionKit]", error, err);
+      console.error("[SpeechRecognitionKit] Error details:", err);
+      console.error("[SpeechRecognitionKit] Error message:", error);
       this.onError?.(error);
       this._endSession();
     }
   }
 
   async stop(_audioUri?: string): Promise<void> {
+    console.log('[STT] stop() called, sessionEnded:', this.sessionEnded);
     // If the native session already ended on its own (e.g. silence timeout),
     // resolve immediately – there is nothing left to stop.
     if (this.sessionEnded) return;
 
     this.isStopping = true;
+    console.log('[STT] Set isStopping=true, lastPartialText:', this.lastPartialText);
 
     return new Promise<void>((resolve) => {
       this.stopResolve = resolve;
-      // stopListening is declared as Promise<string> in the JS wrapper, but the
-      // native method has no resolve/reject blocks, so treat the return value as
-      // unreliable and fall back to the onSpeechEnd event to close the session.
+      // Safety timeout: if END/RESULTS never fires (e.g. audio session conflict),
+      // flush any partial text and resolve after 1.5s so handleStop never hangs.
+      const timeout = setTimeout(() => {
+        console.log('[STT] stop() timeout – forcing _endSession');
+        this._endSession();
+      }, 1500);
+      const originalResolve = resolve;
+      this.stopResolve = () => {
+        clearTimeout(timeout);
+        originalResolve();
+      };
       try {
         if (isNativeModuleAvailable) {
+          console.log('[STT] Calling stopListening()');
           Promise.resolve(stopListening()).catch(() => this._endSession());
         } else {
           this._endSession();
@@ -211,11 +240,13 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
   private _endSession(): void {
     if (this.sessionEnded) return;
     this.sessionEnded = true;
+    console.log('[STT] _endSession called, isStopping:', this.isStopping, 'lastPartialText:', this.lastPartialText);
     this._removeListeners();
     // If stop() was called but the native layer never fired a final RESULTS
     // event (e.g. it emitted END or an error 216 instead), flush the last
     // partial text as a final committed result so the segment is not lost.
     if (this.isStopping && this.lastPartialText.trim()) {
+      console.log('[STT] Flushing last partial as final:', this.lastPartialText);
       this.onResult?.(this.lastPartialText.trim(), true);
       this.lastPartialText = "";
     }
