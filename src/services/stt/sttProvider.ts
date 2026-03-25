@@ -3,8 +3,11 @@
  * Uses react-native-speech-recognition-kit for live on-device transcription.
  * Recognition starts immediately when recording begins and streams partial and
  * final results in real-time via native OS speech APIs.
+ * 
+ * ANDROID NOTE: On Android, this uses the SpeechRecognizer API which requires
+ * Google app or another speech recognition service to be installed.
  */
-import { NativeModules } from "react-native";
+import { NativeModules, Platform } from "react-native";
 import {
   addEventListener,
   destroy as destroyRecognizer,
@@ -61,21 +64,28 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
   private lastPartialText: string = "";
 
   async start(_locale: string): Promise<void> {
+    console.log('=== [STT] START METHOD CALLED ===');
     console.log('[STT] start called with locale:', _locale);
+    console.log('[STT] Platform:', Platform.OS);
     console.log('[STT] Native module available:', isNativeModuleAvailable);
     console.log('[STT] SpeechRecognition module:', SpeechRecognition);
+    console.log('[STT] NativeModules:', Object.keys(NativeModules));
     
     // Check if native module is available
     if (!isNativeModuleAvailable) {
-      const error = "Speech recognition native module not initialized. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
+      const error = Platform.OS === 'android'
+        ? "Speech recognition native module not initialized. Please rebuild the app with 'npx expo prebuild --clean' and 'npx expo run:android'."
+        : "Speech recognition native module not initialized. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
       console.error("[SpeechRecognitionKit]", error);
       this.onError?.(error);
       return;
     }
 
+    console.log('[STT] Native module IS available, proceeding...');
+    
     // Reset state for a fresh session.
     // NOTE: setRecognitionLanguage is not implemented natively; the recogniser
-    // always uses the device locale (NSLocale.currentLocale).
+    // always uses the device locale (NSLocale.currentLocale on iOS, device locale on Android).
     this.isStopping = false;
     this.sessionEnded = false;
     this.stopResolve = null;
@@ -83,28 +93,36 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     this._removeListeners();
     console.log('[STT] Setting up event listeners');
 
+    // Set up listeners BEFORE starting recognition to ensure we catch all events
+
     // Partial results → stream live text to the UI.
+    console.log('[STT] Adding PARTIAL_RESULTS listener');
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.PARTIAL_RESULTS, (event) => {
+        console.log('[STT] *** PARTIAL_RESULTS EVENT FIRED ***', event);
         const text = this._extractText(event);
-        console.log('[STT] PARTIAL_RESULTS:', text);
+        console.log('[STT] PARTIAL_RESULTS extracted text:', text);
         if (text) {
           this.lastPartialText = text;
+          console.log('[STT] Calling onResult with partial text:', text);
           this.onResult?.(text, false);
         }
       }),
     );
-    console.log('[STT] PARTIAL_RESULTS listener added');
+    console.log('[STT] PARTIAL_RESULTS listener added, subscription count:', this.subscriptions.length);
 
     // Final results → commit the utterance as a finished segment.
     // Only end the session when stop() has been explicitly called; otherwise
     // keep listening to capture subsequent utterances.
+    console.log('[STT] Adding RESULTS listener');
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.RESULTS, (event) => {
+        console.log('[STT] *** RESULTS EVENT FIRED ***', event);
         const text = this._extractText(event);
-        console.log('[STT] RESULTS:', text, 'isStopping:', this.isStopping);
+        console.log('[STT] RESULTS extracted text:', text, 'isStopping:', this.isStopping);
         if (text) {
           this.lastPartialText = ""; // final result supersedes any partial
+          console.log('[STT] Calling onResult with final text:', text);
           this.onResult?.(text, true);
         }
         if (this.isStopping) {
@@ -112,7 +130,16 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
         }
       }),
     );
-    console.log('[STT] RESULTS listener added');
+    console.log('[STT] RESULTS listener added, subscription count:', this.subscriptions.length);
+
+    // START event - confirms recognition has begun
+    console.log('[STT] Adding START listener');
+    this.subscriptions.push(
+      addEventListener(speechRecogntionEvents.START, () => {
+        console.log('[STT] *** START EVENT FIRED - recognition session started ***');
+      }),
+    );
+    console.log('[STT] START listener added, subscription count:', this.subscriptions.length);
 
     // Error → report and close the session.
     // Native emits { message: string, code?: number } for all error events.
@@ -123,14 +150,34 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
         const rawMsg: string =
           event?.message ?? event?.error ?? JSON.stringify(event) ?? "";
         
+        console.log('[STT] ERROR event:', { code, rawMsg, event });
+        
         // Error 7: No speech match found – benign, occurs during silence/pauses
         if (code === 7 || rawMsg.includes("No speech match")) {
+          console.log('[STT] Ignoring error 7 (no speech match)');
           return; // Ignore silently, keep session alive
         }
         
         // Error 216: Audio device reconfiguration (iOS Simulator)
         if (code === 216 || rawMsg.includes("error 216")) {
+          console.log('[STT] Error 216 - audio device reconfiguration');
           this._endSession();
+          return;
+        }
+        
+        // Android-specific: Error 9 means insufficient permissions
+        if (Platform.OS === 'android' && code === 9) {
+          const msg = "Microphone permission denied. Please grant microphone permission in Settings.";
+          console.error("[SpeechRecognitionKit] Android permission error:", msg);
+          this.onError?.(msg);
+          this._endSession();
+          return;
+        }
+        
+        // Android-specific: Error 2 means network error (for cloud-based recognition)
+        if (Platform.OS === 'android' && code === 2) {
+          console.warn('[STT] Android network error - may need internet for speech recognition');
+          // Don't end session, just log warning
           return;
         }
         
@@ -144,23 +191,54 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     // END fires after RESULTS (or alone if no speech was detected).
     // Only end the session if stop() has been explicitly called; otherwise
     // iOS fires END after each utterance and we want to keep listening.
+    console.log('[STT] Adding END listener');
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.END, () => {
-        console.log('[STT] END event, isStopping:', this.isStopping);
+        console.log('[STT] *** END EVENT FIRED ***, isStopping:', this.isStopping);
         if (this.isStopping) {
           this._endSession();
         }
       }),
     );
+    console.log('[STT] END listener added, subscription count:', this.subscriptions.length);
+    console.log('[STT] All event listeners registered. Total subscriptions:', this.subscriptions.length);
 
     try {
-      console.log('[STT] Calling startListening()');
+      console.log('[STT] ===== ABOUT TO CALL startListening() =====');
+      console.log('[STT] startListening function type:', typeof startListening);
       console.log('[STT] startListening function:', startListening);
+      console.log('[STT] speechRecogntionEvents:', speechRecogntionEvents);
+      
+      // Add a small delay to ensure listeners are fully registered
+      // This is especially important on Android
+      const delay = Platform.OS === 'android' ? 200 : 100;
+      console.log(`[STT] Waiting ${delay}ms before starting recognition...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      console.log('[STT] Delay complete, now calling startListening()...');
       const result = await startListening();
-      console.log('[STT] startListening() completed, result:', result);
+      console.log('[STT] ===== startListening() COMPLETED =====');
+      console.log('[STT] startListening() result:', result);
+      console.log('[STT] startListening() result type:', typeof result);
+      
+      // Verify recognition actually started
+      if (!result) {
+        console.warn('[STT] WARNING: startListening returned falsy result');
+        if (Platform.OS === 'android') {
+          console.warn('[STT] Android: Make sure Google app or speech recognition service is installed');
+          console.warn('[STT] Android: Check if microphone permission is granted');
+        }
+      } else {
+        console.log('[STT] SUCCESS: Recognition should now be active and listening');
+      }
     } catch (err) {
-      const error = "Speech recognition failed to start. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
-      console.error("[SpeechRecognitionKit] Error details:", err);
+      console.error('[STT] ===== EXCEPTION IN startListening() =====');
+      console.error('[STT] Exception type:', err?.constructor?.name);
+      console.error('[STT] Full exception:', err);
+      
+      const error = Platform.OS === 'android'
+        ? "Speech recognition failed to start on Android. Make sure Google app is installed and microphone permission is granted. Try rebuilding with 'npx expo prebuild --clean' and 'npx expo run:android'."
+        : "Speech recognition failed to start. Please rebuild the app with 'npx expo prebuild' and 'npx expo run:ios' or 'npx expo run:android'.";
       console.error("[SpeechRecognitionKit] Error message:", error);
       this.onError?.(error);
       this._endSession();

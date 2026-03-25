@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -121,27 +122,32 @@ export default function RecordScreen() {
   // ─── STT session setup ─────────────────────────────────────────────────
   // Extracted so it can be called on initial start AND after resume.
   const startSTT = useCallback(async () => {
-    console.log('[RecordScreen] startSTT called');
+    console.log('=== [RecordScreen] startSTT CALLED ===');
+    
+    // Debug: Check if native module is available
+    const { NativeModules } = require('react-native');
+    console.log('[RecordScreen] SpeechRecognition native module:', NativeModules.SpeechRecognition);
+    console.log('[RecordScreen] SpeechRecognition methods:', NativeModules.SpeechRecognition ? Object.keys(NativeModules.SpeechRecognition) : 'MODULE NOT FOUND');
+    
     const stt = getSTTProvider();
-    console.log('[RecordScreen] STT provider:', stt);
-    const available = await stt.isAvailable();
-    console.log('[RecordScreen] STT available:', available);
-    if (!available) {
-      Alert.alert(
-        "Speech Recognition Unavailable",
-        "Live transcription requires a native build. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild' and 'npx expo run:ios'",
-        [{ text: "OK" }],
-      );
-      return;
-    }
+    console.log('[RecordScreen] STT provider obtained:', stt);
+    console.log('[RecordScreen] STT provider type:', stt?.constructor?.name);
+    
+    // Set up callbacks BEFORE checking availability
+    console.log('[RecordScreen] Setting up onResult callback');
     stt.onResult = (text, isFinal) => {
-      console.log('[RecordScreen] STT onResult:', { text, isFinal });
+      console.log('[RecordScreen] *** onResult CALLBACK FIRED ***');
+      console.log('[RecordScreen] STT onResult:', { text, isFinal, textLength: text?.length });
       setLiveTranscript(text);
       if (isFinal && text.trim()) {
         const elapsed =
           Date.now() - startTimeRef.current - pausedDurationRef.current;
         const currentNoteId = noteIdRef.current;
-        if (!currentNoteId) return;
+        console.log('[RecordScreen] Final result - noteId:', currentNoteId, 'elapsed:', elapsed);
+        if (!currentNoteId) {
+          console.warn('[RecordScreen] No noteId, skipping segment creation');
+          return;
+        }
         const seg: NoteSegment = {
           id: generateId(),
           noteId: currentNoteId,
@@ -155,12 +161,34 @@ export default function RecordScreen() {
         setLiveTranscript("");
       }
     };
+    console.log('[RecordScreen] onResult callback set');
+    
+    console.log('[RecordScreen] Setting up onError callback');
     stt.onError = (err) => {
-      console.warn("[STT Error]", err);
+      console.warn("[RecordScreen] *** onError CALLBACK FIRED ***");
+      console.warn("[RecordScreen] STT Error:", err);
     };
+    console.log('[RecordScreen] onError callback set');
+    
+    console.log('[RecordScreen] Checking STT availability...');
+    const available = await stt.isAvailable();
+    console.log('[RecordScreen] STT available:', available);
+    if (!available) {
+      const message = Platform.OS === 'android'
+        ? "Live transcription requires a native build and Google app (or speech recognition service) installed. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild --clean' and 'npx expo run:android'"
+        : "Live transcription requires a native build. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild' and 'npx expo run:ios'";
+      console.warn('[RecordScreen] STT not available, showing alert');
+      Alert.alert(
+        "Speech Recognition Unavailable",
+        message,
+        [{ text: "OK" }],
+      );
+      return;
+    }
+    
     console.log('[RecordScreen] Starting STT with locale:', languageCodeRef.current);
     await stt.start(languageCodeRef.current);
-    console.log('[RecordScreen] STT started');
+    console.log('[RecordScreen] === STT start() completed ===');
   }, [addSessionSegment, setLiveTranscript]);
 
   // ─── Start Recording ──────────────────────────────────────────────────
@@ -173,7 +201,9 @@ export default function RecordScreen() {
     if (!hasSpeechPermission) {
       Alert.alert(
         "Speech Recognition Permission Required",
-        "NoteGenius needs speech recognition permission to transcribe your voice. The app will continue recording audio without transcription.",
+        Platform.OS === 'android'
+          ? "NoteGenius needs microphone permission to transcribe your voice. The app will continue recording audio without transcription."
+          : "NoteGenius needs speech recognition permission to transcribe your voice. The app will continue recording audio without transcription.",
         [{ text: "OK" }]
       );
     }

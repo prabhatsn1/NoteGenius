@@ -1,6 +1,6 @@
 /**
  * NoteGenius – Permission helpers.
- * Uses expo-audio permissions + expo-notifications.
+ * Uses expo-audio permissions + expo-notifications + react-native-permissions.
  */
 import {
   getRecordingPermissionsAsync,
@@ -8,15 +8,22 @@ import {
 } from "expo-audio";
 import * as Notifications from "expo-notifications";
 import { Alert, Linking, Platform } from "react-native";
-import { request, PERMISSIONS, RESULTS } from "react-native-permissions";
+import { request, PERMISSIONS, RESULTS, check } from "react-native-permissions";
 
 export const Permissions = {
-  /** Request speech recognition permission (iOS only). */
+  /** Request speech recognition permission (iOS only). On Android, RECORD_AUDIO covers speech. */
   async requestSpeechRecognition(): Promise<boolean> {
-    if (Platform.OS !== "ios") return true;
+    if (Platform.OS !== "ios") {
+      // On Android, speech recognition uses the same RECORD_AUDIO permission
+      // Check if microphone permission is granted
+      const { granted } = await getRecordingPermissionsAsync();
+      console.log('[Permissions] Android - microphone permission:', granted);
+      return granted;
+    }
     
     try {
       const result = await request(PERMISSIONS.IOS.SPEECH_RECOGNITION);
+      console.log('[Permissions] iOS - speech recognition permission:', result);
       return result === RESULTS.GRANTED;
     } catch (err) {
       console.warn("[Permissions] Speech recognition request failed:", err);

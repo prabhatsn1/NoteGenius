@@ -15,15 +15,8 @@ import "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme } from "../hooks/use-color-scheme";
 import { getDatabase } from "../src/data/database";
-import {
-  initAnalytics,
-  setAnalyticsUser,
-} from "../src/services/monitoring/analytics";
 import SetupScreen from "../src/screens/SetupScreen";
 import { useUserStore } from "../src/store/useUserStore";
-
-// Initialise Firebase Analytics & Crashlytics as early as possible.
-initAnalytics();
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -44,10 +37,7 @@ function RootLayout() {
     init();
   }, []);
 
-  // Tag analytics events with the user's display name (no PII beyond what they entered).
-  useEffect(() => {
-    if (profile?.name) setAnalyticsUser(profile.name);
-  }, [profile?.name]);
+
 
   // Show setup screen on first launch
   if (dbReady && !isSetupComplete) {

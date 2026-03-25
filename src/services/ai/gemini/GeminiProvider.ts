@@ -8,11 +8,6 @@
  * The API key is stored in expo-secure-store, never in MMKV.
  */
 import { chunkText } from "../../../utils/text";
-import {
-  addAiBreadcrumb,
-  captureAiError,
-  traceAiOperation,
-} from "../../monitoring/analytics";
 import type {
   AiFlashcardResult,
   AiSummaryResult,
@@ -55,8 +50,7 @@ async function callGemini(
   body: GeminiRequestBody,
   modelName: string = DEFAULT_GEMINI_MODEL,
 ): Promise<string> {
-  return traceAiOperation("callGemini", "gemini", async () => {
-    const url = `${GEMINI_BASE_URL}/${modelName}:generateContent?key=${apiKey}`;
+  const url = `${GEMINI_BASE_URL}/${modelName}:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -84,8 +78,7 @@ async function callGemini(
 
     const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     return text;
-  });
-}
+  }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -123,10 +116,6 @@ export function createGeminiProvider(
       transcript: string,
       userName: string,
     ): Promise<AiSummaryResult> {
-      addAiBreadcrumb("summarize started", {
-        provider: "gemini",
-        transcriptLength: transcript.length,
-      });
       // For long transcripts, chunk and summarise each, then merge at end
       const chunks = chunkText(transcript, 12_000);
       try {
@@ -177,11 +166,6 @@ export function createGeminiProvider(
         }
         return mergeSummaries(partials);
       } catch (err) {
-        captureAiError(err, {
-          provider: "gemini",
-          operation: "summarize",
-          transcriptLength: transcript.length,
-        });
         throw err;
       }
     },
@@ -206,11 +190,6 @@ export function createGeminiProvider(
         return title.slice(0, 60);
       } catch (err) {
         console.warn("[GeminiProvider] generateTitle failed:", err);
-        captureAiError(err, {
-          provider: "gemini",
-          operation: "generateTitle",
-          transcriptLength: transcript.length,
-        });
         return "";
       }
     },
@@ -219,11 +198,6 @@ export function createGeminiProvider(
       transcript: string,
       summary: AiSummaryResult | null,
     ): Promise<AiFlashcardResult[]> {
-      addAiBreadcrumb("generateFlashcards started", {
-        provider: "gemini",
-        transcriptLength: transcript.length,
-        hasSummary: summary !== null,
-      });
       try {
         const userPrompt = summary
           ? `Summary:\n${JSON.stringify(summary)}\n\nTranscript:\n${transcript.slice(0, 12_000)}`
@@ -240,11 +214,6 @@ export function createGeminiProvider(
         );
         return parseJSONSafe<AiFlashcardResult[]>(text, []);
       } catch (err) {
-        captureAiError(err, {
-          provider: "gemini",
-          operation: "generateFlashcards",
-          transcriptLength: transcript.length,
-        });
         throw err;
       }
     },
