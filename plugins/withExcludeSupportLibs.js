@@ -12,9 +12,7 @@ const { withProjectBuildGradle } = require("expo/config-plugins");
 module.exports = function withExcludeSupportLibs(config) {
   return withProjectBuildGradle(config, (config) => {
     if (config.modResults.language === "groovy") {
-      config.modResults.contents = addExcludeBlock(
-        config.modResults.contents
-      );
+      config.modResults.contents = addExcludeBlock(config.modResults.contents);
     }
     return config;
   });

@@ -70,49 +70,45 @@ async function callHF(
   modelName: string = HF_PRIMARY_MODEL,
 ): Promise<string> {
   const body: HFRequestBody = {
-        model: modelName,
-        messages,
-        max_tokens: maxTokens,
-        temperature: 0.2,
-        stream: false,
-      };
+    model: modelName,
+    messages,
+    max_tokens: maxTokens,
+    temperature: 0.2,
+    stream: false,
+  };
 
-      const response = await fetch(HF_CHAT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
+  const response = await fetch(HF_CHAT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
 
-      if (!response.ok) {
-        if (RATE_LIMIT_STATUSES.has(response.status)) {
-          // Signal caller to try fallback
-          throw new HFRateLimitError(
-            `HuggingFace rate limit on model ${modelName}: HTTP ${response.status}`,
-            response.status,
-          );
-        }
-        const errorText = await response
-          .text()
-          .catch(() => response.statusText);
-        throw new Error(
-          `HuggingFace API error ${response.status}: ${errorText}`,
-        );
-      }
-
-      const json = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-        error?: string;
-      };
-
-      if (json.error) {
-        throw new Error(`HuggingFace API error: ${json.error}`);
-      }
-
-      return json.choices?.[0]?.message?.content ?? "";
+  if (!response.ok) {
+    if (RATE_LIMIT_STATUSES.has(response.status)) {
+      // Signal caller to try fallback
+      throw new HFRateLimitError(
+        `HuggingFace rate limit on model ${modelName}: HTTP ${response.status}`,
+        response.status,
+      );
     }
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`HuggingFace API error ${response.status}: ${errorText}`);
+  }
+
+  const json = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    error?: string;
+  };
+
+  if (json.error) {
+    throw new Error(`HuggingFace API error: ${json.error}`);
+  }
+
+  return json.choices?.[0]?.message?.content ?? "";
+}
 
 /** Sentinel error class to distinguish rate-limit failures from other errors. */
 class HFRateLimitError extends Error {

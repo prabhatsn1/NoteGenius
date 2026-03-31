@@ -2,10 +2,15 @@
  * NoteGenius – Summary display component.
  * Shows TL;DR, Key Points, Decisions, Action Items, Open Questions.
  */
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import type { Summary } from '../types/models';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import React from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
+import type { Summary } from "../types/models";
+import {
+  useThemeColors,
+  Spacing,
+  FontSize,
+  BorderRadius,
+} from "../constants/theme";
 
 interface SummaryViewProps {
   summary: Summary;
@@ -14,7 +19,15 @@ interface SummaryViewProps {
 export function SummaryView({ summary }: SummaryViewProps) {
   const colors = useThemeColors();
 
-  const Section = ({ title, items, icon }: { title: string; items: string[]; icon: string }) => {
+  const Section = ({
+    title,
+    items,
+    icon,
+  }: {
+    title: string;
+    items: string[];
+    icon: string;
+  }) => {
     if (items.length === 0) return null;
     return (
       <View style={[styles.section, { borderColor: colors.border }]}>
@@ -24,7 +37,9 @@ export function SummaryView({ summary }: SummaryViewProps) {
         {items.map((item, i) => (
           <View key={i} style={styles.bulletRow}>
             <Text style={[styles.bullet, { color: colors.primary }]}>•</Text>
-            <Text style={[styles.bulletText, { color: colors.text }]}>{item}</Text>
+            <Text style={[styles.bulletText, { color: colors.text }]}>
+              {item}
+            </Text>
           </View>
         ))}
       </View>
@@ -44,11 +59,19 @@ export function SummaryView({ summary }: SummaryViewProps) {
             📌 Action Items
           </Text>
           {summary.actionItems.map((item, i) => (
-            <View key={i} style={[styles.actionItem, { backgroundColor: colors.surfaceVariant }]}>
+            <View
+              key={i}
+              style={[
+                styles.actionItem,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
               <Text style={[styles.actionOwner, { color: colors.primary }]}>
                 {item.owner}
               </Text>
-              <Text style={[styles.actionTask, { color: colors.text }]}>{item.task}</Text>
+              <Text style={[styles.actionTask, { color: colors.text }]}>
+                {item.task}
+              </Text>
               {item.due && (
                 <Text style={[styles.actionDue, { color: colors.warning }]}>
                   Due: {item.due}
@@ -74,11 +97,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: FontSize.lg,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: Spacing.sm,
   },
   bulletRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.sm,
     marginBottom: Spacing.xs,
     paddingRight: Spacing.md,
@@ -99,7 +122,7 @@ const styles = StyleSheet.create({
   },
   actionOwner: {
     fontSize: FontSize.sm,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 2,
   },
   actionTask: {
@@ -109,6 +132,6 @@ const styles = StyleSheet.create({
   actionDue: {
     fontSize: FontSize.sm,
     marginTop: 4,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
 });

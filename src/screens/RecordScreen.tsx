@@ -122,30 +122,47 @@ export default function RecordScreen() {
   // ─── STT session setup ─────────────────────────────────────────────────
   // Extracted so it can be called on initial start AND after resume.
   const startSTT = useCallback(async () => {
-    console.log('=== [RecordScreen] startSTT CALLED ===');
-    
+    console.log("=== [RecordScreen] startSTT CALLED ===");
+
     // Debug: Check if native module is available
-    const { NativeModules } = require('react-native');
-    console.log('[RecordScreen] SpeechRecognition native module:', NativeModules.SpeechRecognition);
-    console.log('[RecordScreen] SpeechRecognition methods:', NativeModules.SpeechRecognition ? Object.keys(NativeModules.SpeechRecognition) : 'MODULE NOT FOUND');
-    
+    const { NativeModules } = require("react-native");
+    console.log(
+      "[RecordScreen] SpeechRecognition native module:",
+      NativeModules.SpeechRecognition,
+    );
+    console.log(
+      "[RecordScreen] SpeechRecognition methods:",
+      NativeModules.SpeechRecognition
+        ? Object.keys(NativeModules.SpeechRecognition)
+        : "MODULE NOT FOUND",
+    );
+
     const stt = getSTTProvider();
-    console.log('[RecordScreen] STT provider obtained:', stt);
-    console.log('[RecordScreen] STT provider type:', stt?.constructor?.name);
-    
+    console.log("[RecordScreen] STT provider obtained:", stt);
+    console.log("[RecordScreen] STT provider type:", stt?.constructor?.name);
+
     // Set up callbacks BEFORE checking availability
-    console.log('[RecordScreen] Setting up onResult callback');
+    console.log("[RecordScreen] Setting up onResult callback");
     stt.onResult = (text, isFinal) => {
-      console.log('[RecordScreen] *** onResult CALLBACK FIRED ***');
-      console.log('[RecordScreen] STT onResult:', { text, isFinal, textLength: text?.length });
+      console.log("[RecordScreen] *** onResult CALLBACK FIRED ***");
+      console.log("[RecordScreen] STT onResult:", {
+        text,
+        isFinal,
+        textLength: text?.length,
+      });
       setLiveTranscript(text);
       if (isFinal && text.trim()) {
         const elapsed =
           Date.now() - startTimeRef.current - pausedDurationRef.current;
         const currentNoteId = noteIdRef.current;
-        console.log('[RecordScreen] Final result - noteId:', currentNoteId, 'elapsed:', elapsed);
+        console.log(
+          "[RecordScreen] Final result - noteId:",
+          currentNoteId,
+          "elapsed:",
+          elapsed,
+        );
         if (!currentNoteId) {
-          console.warn('[RecordScreen] No noteId, skipping segment creation');
+          console.warn("[RecordScreen] No noteId, skipping segment creation");
           return;
         }
         const seg: NoteSegment = {
@@ -156,39 +173,39 @@ export default function RecordScreen() {
           startMs: 0,
           endMs: elapsed,
         };
-        console.log('[RecordScreen] Adding segment:', seg);
+        console.log("[RecordScreen] Adding segment:", seg);
         addSessionSegment(seg);
         setLiveTranscript("");
       }
     };
-    console.log('[RecordScreen] onResult callback set');
-    
-    console.log('[RecordScreen] Setting up onError callback');
+    console.log("[RecordScreen] onResult callback set");
+
+    console.log("[RecordScreen] Setting up onError callback");
     stt.onError = (err) => {
       console.warn("[RecordScreen] *** onError CALLBACK FIRED ***");
       console.warn("[RecordScreen] STT Error:", err);
     };
-    console.log('[RecordScreen] onError callback set');
-    
-    console.log('[RecordScreen] Checking STT availability...');
+    console.log("[RecordScreen] onError callback set");
+
+    console.log("[RecordScreen] Checking STT availability...");
     const available = await stt.isAvailable();
-    console.log('[RecordScreen] STT available:', available);
+    console.log("[RecordScreen] STT available:", available);
     if (!available) {
-      const message = Platform.OS === 'android'
-        ? "Live transcription requires a native build and Google app (or speech recognition service) installed. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild --clean' and 'npx expo run:android'"
-        : "Live transcription requires a native build. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild' and 'npx expo run:ios'";
-      console.warn('[RecordScreen] STT not available, showing alert');
-      Alert.alert(
-        "Speech Recognition Unavailable",
-        message,
-        [{ text: "OK" }],
-      );
+      const message =
+        Platform.OS === "android"
+          ? "Live transcription requires a native build and Google app (or speech recognition service) installed. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild --clean' and 'npx expo run:android'"
+          : "Live transcription requires a native build. The app will continue recording audio without transcription.\n\nTo enable: Run 'npx expo prebuild' and 'npx expo run:ios'";
+      console.warn("[RecordScreen] STT not available, showing alert");
+      Alert.alert("Speech Recognition Unavailable", message, [{ text: "OK" }]);
       return;
     }
-    
-    console.log('[RecordScreen] Starting STT with locale:', languageCodeRef.current);
+
+    console.log(
+      "[RecordScreen] Starting STT with locale:",
+      languageCodeRef.current,
+    );
     await stt.start(languageCodeRef.current);
-    console.log('[RecordScreen] === STT start() completed ===');
+    console.log("[RecordScreen] === STT start() completed ===");
   }, [addSessionSegment, setLiveTranscript]);
 
   // ─── Start Recording ──────────────────────────────────────────────────
@@ -201,10 +218,10 @@ export default function RecordScreen() {
     if (!hasSpeechPermission) {
       Alert.alert(
         "Speech Recognition Permission Required",
-        Platform.OS === 'android'
+        Platform.OS === "android"
           ? "NoteGenius needs microphone permission to transcribe your voice. The app will continue recording audio without transcription."
           : "NoteGenius needs speech recognition permission to transcribe your voice. The app will continue recording audio without transcription.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
 
@@ -251,7 +268,15 @@ export default function RecordScreen() {
     }, AUTOSAVE_INTERVAL);
 
     setStatus("recording");
-  }, [languageCode, startSTT, createNote, setNoteId, setElapsedMs, appendWaveform, setStatus]);
+  }, [
+    languageCode,
+    startSTT,
+    createNote,
+    setNoteId,
+    setElapsedMs,
+    appendWaveform,
+    setStatus,
+  ]);
 
   // ─── Pause Recording ──────────────────────────────────────────────────
   const handlePause = useCallback(async () => {
@@ -292,24 +317,25 @@ export default function RecordScreen() {
     clearTimers();
     setStatus("transcribing");
 
-    // Stop audio capture and wait for the STT session to fully wind down.
-    const result = await AudioRecorder.stop();
-
+    // Stop STT first so it can flush the last partial before the audio
+    // session is torn down (stopping audio first kills the STT pipeline).
     const stt = getSTTProvider();
-    await stt.stop(result?.uri);
+    await stt.stop();
+
+    const result = await AudioRecorder.stop();
 
     // Wait for any final STT results to be committed to the store.
     // The native layer may emit END without RESULTS, causing _endSession to
     // flush the last partial text asynchronously. A short delay ensures that
     // final segment is visible when we read the store.
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     // Read fresh state – avoids stale-closure bug where segments added by the
     // onSpeechEnd callback (above awaits) are invisible to this function.
     const { noteId: freshNoteId, sessionSegments: freshSegments } =
       useRecordingStore.getState();
-    
-    console.log('[RecordScreen] handleStop - segments:', freshSegments);
+
+    console.log("[RecordScreen] handleStop - segments:", freshSegments);
 
     if (!freshNoteId) {
       setStatus("idle");

@@ -31,7 +31,7 @@ const storageAdapter = {
     const cached = asyncStorageCache.get(key);
     return cached;
   },
-  
+
   set(key: string, value: string | boolean): void {
     if (useMMKV) {
       storage.set(key, value);
@@ -40,7 +40,7 @@ const storageAdapter = {
       AsyncStorage.setItem(key, String(value)).catch(() => {});
     }
   },
-  
+
   getBoolean(key: string): boolean | undefined {
     if (useMMKV) {
       return storage.getBoolean(key);
@@ -48,7 +48,7 @@ const storageAdapter = {
     const cached = asyncStorageCache.get(key);
     return cached === "true";
   },
-  
+
   clearAll(): void {
     if (useMMKV) {
       storage.clearAll();

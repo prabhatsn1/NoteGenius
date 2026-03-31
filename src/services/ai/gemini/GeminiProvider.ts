@@ -52,33 +52,33 @@ async function callGemini(
 ): Promise<string> {
   const url = `${GEMINI_BASE_URL}/${modelName}:generateContent?key=${apiKey}`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
-      throw new Error(`Gemini API error ${response.status}: ${errorText}`);
-    }
-
-    const json = (await response.json()) as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> };
-      }>;
-      error?: { message: string };
-    };
-
-    if (json.error) {
-      throw new Error(`Gemini API error: ${json.error.message}`);
-    }
-
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    return text;
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Gemini API error ${response.status}: ${errorText}`);
   }
+
+  const json = (await response.json()) as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> };
+    }>;
+    error?: { message: string };
+  };
+
+  if (json.error) {
+    throw new Error(`Gemini API error: ${json.error.message}`);
+  }
+
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  return text;
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -253,13 +253,14 @@ export async function validateGeminiApiKey(
     const body = (await res.json().catch(() => ({}))) as {
       error?: { message?: string } | string;
     };
-    const errorMsg = typeof body?.error === 'string'
-      ? body.error
-      : typeof body?.error?.message === 'string'
-        ? body.error.message
-        : body?.error
-          ? JSON.stringify(body.error)
-          : `HTTP ${res.status}`;
+    const errorMsg =
+      typeof body?.error === "string"
+        ? body.error
+        : typeof body?.error?.message === "string"
+          ? body.error.message
+          : body?.error
+            ? JSON.stringify(body.error)
+            : `HTTP ${res.status}`;
     return {
       valid: false,
       error: errorMsg,

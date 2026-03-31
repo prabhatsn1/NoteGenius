@@ -9,7 +9,7 @@ const { withAndroidManifest } = require("expo/config-plugins");
  * in legacy com.android.support libraries that clash with AndroidX.
  * The merger is told to replace appComponentFactory but the replacement
  * value is missing. We set it explicitly to the AndroidX value.
- * 
+ *
  * Also adds queries for speech recognition service (Android 11+).
  */
 module.exports = function withAndroidManifestFix(config) {
@@ -18,8 +18,7 @@ module.exports = function withAndroidManifestFix(config) {
 
     // Ensure the tools namespace is declared on <manifest>
     if (!manifest.manifest.$["xmlns:tools"]) {
-      manifest.manifest.$["xmlns:tools"] =
-        "http://schemas.android.com/tools";
+      manifest.manifest.$["xmlns:tools"] = "http://schemas.android.com/tools";
     }
 
     const application = manifest.manifest.application?.[0];
@@ -52,9 +51,10 @@ module.exports = function withAndroidManifestFix(config) {
             intent.action &&
             intent.action.some(
               (action) =>
-                action.$["android:name"] === "android.speech.RecognitionService"
-            )
-        )
+                action.$["android:name"] ===
+                "android.speech.RecognitionService",
+            ),
+        ),
     );
 
     if (!hasRecognitionQuery) {

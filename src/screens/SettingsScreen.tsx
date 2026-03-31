@@ -335,11 +335,12 @@ export default function SettingsScreen() {
       } else {
         const body = await res.json().catch(() => ({}));
         setGeminiStatus("error");
-        const errorMsg = typeof body?.error?.message === 'string'
-          ? body.error.message
-          : body?.error
-            ? JSON.stringify(body.error)
-            : `HTTP ${res.status}`;
+        const errorMsg =
+          typeof body?.error?.message === "string"
+            ? body.error.message
+            : body?.error
+              ? JSON.stringify(body.error)
+              : `HTTP ${res.status}`;
         setGeminiError(errorMsg);
       }
     } catch (e: unknown) {
@@ -389,13 +390,16 @@ export default function SettingsScreen() {
       if (res.ok || res.status === 429 || res.status === 503) {
         setHfStatus("connected");
       } else {
-        const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: unknown;
+        };
         setHfStatus("error");
-        const errorMsg = typeof body?.error === 'string' 
-          ? body.error 
-          : body?.error 
-            ? JSON.stringify(body.error) 
-            : `HTTP ${res.status}`;
+        const errorMsg =
+          typeof body?.error === "string"
+            ? body.error
+            : body?.error
+              ? JSON.stringify(body.error)
+              : `HTTP ${res.status}`;
         setHfError(errorMsg);
       }
     } catch (e: unknown) {
@@ -482,11 +486,12 @@ export default function SettingsScreen() {
     try {
       const result = await validateGeminiApiKey(trimmed);
       if (!result.valid) {
-        const errorMsg = typeof result.error === 'string'
-          ? result.error
-          : result.error
-            ? JSON.stringify(result.error)
-            : "The key was rejected by the Gemini API.";
+        const errorMsg =
+          typeof result.error === "string"
+            ? result.error
+            : result.error
+              ? JSON.stringify(result.error)
+              : "The key was rejected by the Gemini API.";
         setKeyValidationError(errorMsg);
         return;
       }
@@ -536,11 +541,12 @@ export default function SettingsScreen() {
     try {
       const result = await validateHuggingFaceApiKey(trimmed);
       if (!result.valid) {
-        const errorMsg = typeof result.error === 'string'
-          ? result.error
-          : result.error
-            ? JSON.stringify(result.error)
-            : "The token was rejected by the Hugging Face API.";
+        const errorMsg =
+          typeof result.error === "string"
+            ? result.error
+            : result.error
+              ? JSON.stringify(result.error)
+              : "The token was rejected by the Hugging Face API.";
         setHfKeyValidationError(errorMsg);
         return;
       }

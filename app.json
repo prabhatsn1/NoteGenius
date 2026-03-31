@@ -61,12 +61,7 @@
           "color": "#6C63FF"
         }
       ],
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "NoteGenius needs microphone access to record voice notes."
-        }
-      ]
+      "expo-av"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -75,9 +70,8 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "519df85a-79d3-444a-be96-b1c8b1f23e13"
+        "projectId": "30477b66-38b7-4c2d-8872-6131a2045a15"
       }
-    },
-    "owner": "devilgod431"
+    }
   }
 }

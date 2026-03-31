@@ -1,73 +1,58 @@
 /**
  * NoteGenius – Audio recording service.
- * Uses expo-audio for recording and playback with waveform metering.
+ * Uses expo-av for recording and playback with waveform metering.
  */
-import type {
-  AudioPlayer as ExpoAudioPlayer,
-  AudioRecorder as ExpoAudioRecorder,
-  RecorderState,
-  RecordingOptions,
-} from "expo-audio";
-import {
-  AudioModule,
-  AudioQuality,
-  IOSOutputFormat,
-  createAudioPlayer,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-} from "expo-audio";
+import { Audio, AVPlaybackStatus } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 
 /** Recording quality preset optimized for voice. */
-const RECORDING_OPTIONS: RecordingOptions = {
-  extension: ".m4a",
-  sampleRate: 44100,
-  numberOfChannels: 1,
-  bitRate: 128000,
+const RECORDING_OPTIONS: Audio.RecordingOptions = {
+  ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
   android: {
-    outputFormat: "mpeg4",
-    audioEncoder: "aac",
+    extension: ".m4a",
+    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+    sampleRate: 44100,
+    numberOfChannels: 1,
+    bitRate: 128000,
   },
   ios: {
-    audioQuality: AudioQuality.HIGH,
-    outputFormat: IOSOutputFormat.MPEG4AAC,
+    extension: ".m4a",
+    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+    audioQuality: Audio.IOSAudioQuality.HIGH,
+    sampleRate: 44100,
+    numberOfChannels: 1,
+    bitRate: 128000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
   },
-  web: {
-    mimeType: "audio/webm",
-    bitsPerSecond: 128000,
-  },
+  web: { mimeType: "audio/webm", bitsPerSecond: 128000 },
+  isMeteringEnabled: true,
 };
 
-let recorder: ExpoAudioRecorder | null = null;
-let player: ExpoAudioPlayer | null = null;
+let recorder: Audio.Recording | null = null;
+let player: Audio.Sound | null = null;
 
 export const AudioRecorder = {
-  /** Request microphone permission and set audio mode. */
   async prepare(): Promise<boolean> {
-    const { granted } = await requestRecordingPermissionsAsync();
+    const { granted } = await Audio.requestPermissionsAsync();
     if (!granted) return false;
-    await setAudioModeAsync({
-      allowsRecording: true,
-      playsInSilentMode: true,
-      shouldPlayInBackground: false,
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: false,
     });
     return true;
   },
 
-  /** Start recording; returns the AudioRecorder object for status polling. */
-  async start(): Promise<ExpoAudioRecorder | null> {
+  async start(): Promise<Audio.Recording | null> {
     try {
       const hasPermission = await AudioRecorder.prepare();
-      if (!hasPermission) {
-        return null;
-      }
-
-      recorder = new AudioModule.AudioRecorder({
-        ...RECORDING_OPTIONS,
-        isMeteringEnabled: true, // enables waveform amplitude
-      });
-      await recorder.prepareToRecordAsync();
-      await recorder.record();
+      if (!hasPermission) return null;
+      recorder = new Audio.Recording();
+      await recorder.prepareToRecordAsync(RECORDING_OPTIONS);
+      await recorder.startAsync();
       return recorder;
     } catch (err) {
       console.error("[AudioRecorder] start error:", err);
@@ -75,42 +60,34 @@ export const AudioRecorder = {
     }
   },
 
-  /** Pause recording. */
   async pause(): Promise<void> {
     if (!recorder) return;
-    await recorder.pause();
+    await recorder.pauseAsync();
   },
 
-  /** Resume after pause. */
   async resume(): Promise<void> {
     if (!recorder) return;
-    await recorder.record();
+    await recorder.startAsync();
   },
 
-  /** Stop recording; returns the local file URI and duration. */
   async stop(): Promise<{ uri: string; durationMs: number } | null> {
     if (!recorder) return null;
     try {
-      const durationMs = recorder.currentTime * 1000;
-      await recorder.stop();
-      const uri = recorder.uri;
-      await setAudioModeAsync({ allowsRecording: false });
+      const status = await recorder.getStatusAsync();
+      const durationMs = status.durationMillis ?? 0;
+      await recorder.stopAndUnloadAsync();
+      const uri = recorder.getURI();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
 
-      // Move to persistent directory
       const filename = `recording_${Date.now()}.m4a`;
       const destDir = `${FileSystem.documentDirectory}recordings/`;
       await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
       const destUri = destDir + filename;
 
-      if (uri) {
-        await FileSystem.moveAsync({ from: uri, to: destUri });
-      }
+      if (uri) await FileSystem.moveAsync({ from: uri, to: destUri });
 
       recorder = null;
-      return {
-        uri: destUri,
-        durationMs,
-      };
+      return { uri: destUri, durationMs };
     } catch (err) {
       console.error("[AudioRecorder] stop error:", err);
       recorder = null;
@@ -118,10 +95,9 @@ export const AudioRecorder = {
     }
   },
 
-  /** Get current recording status (metering, duration). */
-  async getStatus(): Promise<RecorderState | null> {
+  async getStatus(): Promise<Audio.RecordingStatus | null> {
     if (!recorder) return null;
-    return recorder.getStatus();
+    return recorder.getStatusAsync();
   },
 
   /** Cancel and discard the current recording. */
@@ -137,24 +113,23 @@ export const AudioRecorder = {
 };
 
 export const AudioPlayer = {
-  /** Load and play an audio file. */
   async play(
     uri: string,
     onFinish?: () => void,
     positionMs = 0,
-  ): Promise<ExpoAudioPlayer | null> {
+  ): Promise<Audio.Sound | null> {
     try {
       await AudioPlayer.stop();
-      player = createAudioPlayer({ uri });
-      if (onFinish) {
-        player.addListener("playbackStatusUpdate", (status) => {
-          if (status.didJustFinish) {
-            onFinish();
-          }
-        });
-      }
-      await player.seekTo(positionMs / 1000);
-      player.play();
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { positionMillis: positionMs, shouldPlay: true },
+        onFinish
+          ? (status: AVPlaybackStatus) => {
+              if (status.isLoaded && status.didJustFinish) onFinish();
+            }
+          : undefined,
+      );
+      player = sound;
       return player;
     } catch (err) {
       console.error("[AudioPlayer] play error:", err);
@@ -162,26 +137,22 @@ export const AudioPlayer = {
     }
   },
 
-  /** Pause playback. */
   async pause(): Promise<void> {
-    if (player) player.pause();
+    if (player) await player.pauseAsync();
   },
 
-  /** Resume playback. */
   async resume(): Promise<void> {
-    if (player) player.play();
+    if (player) await player.playAsync();
   },
 
-  /** Seek to position. */
   async seek(positionMs: number): Promise<void> {
-    if (player) await player.seekTo(positionMs / 1000);
+    if (player) await player.setPositionAsync(positionMs);
   },
 
-  /** Stop and unload. */
   async stop(): Promise<void> {
     if (player) {
-      player.pause();
-      player.remove();
+      await player.stopAsync();
+      await player.unloadAsync();
       player = null;
     }
   },

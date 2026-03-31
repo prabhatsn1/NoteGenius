@@ -37,8 +37,6 @@ function RootLayout() {
     init();
   }, []);
 
-
-
   // Show setup screen on first launch
   if (dbReady && !isSetupComplete) {
     return (

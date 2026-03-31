@@ -1,11 +1,8 @@
 /**
  * NoteGenius – Permission helpers.
- * Uses expo-audio permissions + expo-notifications + react-native-permissions.
+ * Uses expo-av permissions + expo-notifications + react-native-permissions.
  */
-import {
-  getRecordingPermissionsAsync,
-  requestRecordingPermissionsAsync,
-} from "expo-audio";
+import { Audio } from "expo-av";
 import * as Notifications from "expo-notifications";
 import { Alert, Linking, Platform } from "react-native";
 import { request, PERMISSIONS, RESULTS, check } from "react-native-permissions";
@@ -16,14 +13,14 @@ export const Permissions = {
     if (Platform.OS !== "ios") {
       // On Android, speech recognition uses the same RECORD_AUDIO permission
       // Check if microphone permission is granted
-      const { granted } = await getRecordingPermissionsAsync();
-      console.log('[Permissions] Android - microphone permission:', granted);
+      const { granted } = await Audio.getPermissionsAsync();
+      console.log("[Permissions] Android - microphone permission:", granted);
       return granted;
     }
-    
+
     try {
       const result = await request(PERMISSIONS.IOS.SPEECH_RECOGNITION);
-      console.log('[Permissions] iOS - speech recognition permission:', result);
+      console.log("[Permissions] iOS - speech recognition permission:", result);
       return result === RESULTS.GRANTED;
     } catch (err) {
       console.warn("[Permissions] Speech recognition request failed:", err);
@@ -33,10 +30,9 @@ export const Permissions = {
 
   /** Request audio recording permission with friendly explainer. */
   async requestMicrophone(): Promise<boolean> {
-    const { granted } = await getRecordingPermissionsAsync();
+    const { granted } = await Audio.getPermissionsAsync();
     if (granted) return true;
 
-    // Show explainer
     return new Promise((resolve) => {
       Alert.alert(
         "Microphone Access",
@@ -46,9 +42,8 @@ export const Permissions = {
           {
             text: "Allow",
             onPress: async () => {
-              const { granted: g } = await requestRecordingPermissionsAsync();
+              const { granted: g } = await Audio.requestPermissionsAsync();
               if (!g) {
-                // Redirect to settings
                 Alert.alert(
                   "Permission Required",
                   "Please enable microphone access in Settings.",
@@ -80,7 +75,7 @@ export const Permissions = {
 
   /** Check all required permissions. */
   async checkAll(): Promise<{ microphone: boolean; notifications: boolean }> {
-    const mic = await getRecordingPermissionsAsync();
+    const mic = await Audio.getPermissionsAsync();
     const notif = await Notifications.getPermissionsAsync();
     return {
       microphone: mic.granted,

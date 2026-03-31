@@ -21,12 +21,12 @@ const withSpeechRecognition = (config) => {
       if (!config.modResults.manifest["uses-permission"]) {
         config.modResults.manifest["uses-permission"] = [];
       }
-      
+
       // Add RECORD_AUDIO if not present
       const hasRecordAudio = config.modResults.manifest["uses-permission"].some(
-        (perm) => perm.$["android:name"] === "android.permission.RECORD_AUDIO"
+        (perm) => perm.$["android:name"] === "android.permission.RECORD_AUDIO",
       );
-      
+
       if (!hasRecordAudio) {
         config.modResults.manifest["uses-permission"].push({
           $: { "android:name": "android.permission.RECORD_AUDIO" },

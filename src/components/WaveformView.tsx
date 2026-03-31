@@ -2,9 +2,9 @@
  * NoteGenius – Real-time waveform visualization component.
  * Renders amplitude bars that animate during recording.
  */
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { useThemeColors } from '../constants/theme';
+import React from "react";
+import { View, StyleSheet } from "react-native";
+import { useThemeColors } from "../constants/theme";
 
 interface WaveformViewProps {
   /** Array of amplitude values (0..1) */
@@ -60,9 +60,9 @@ export function WaveformView({
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 2,
     paddingHorizontal: 8,
   },

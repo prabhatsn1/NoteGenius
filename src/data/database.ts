@@ -120,16 +120,16 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     // v2: Add tags (JSON array) and isPinned (boolean) to notes
     // Check if columns exist first to avoid duplicate column error
     const tableInfo = await db.getAllAsync<{ name: string }>(
-      "PRAGMA table_info(notes);"
+      "PRAGMA table_info(notes);",
     );
-    const columnNames = tableInfo.map(col => col.name);
-    
-    if (!columnNames.includes('tags')) {
+    const columnNames = tableInfo.map((col) => col.name);
+
+    if (!columnNames.includes("tags")) {
       await db.execAsync(`
         ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
       `);
     }
-    if (!columnNames.includes('isPinned')) {
+    if (!columnNames.includes("isPinned")) {
       await db.execAsync(`
         ALTER TABLE notes ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0;
       `);
@@ -139,11 +139,11 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   if (version < 3) {
     // v3: Add isArchived (boolean) to notes
     const tableInfo = await db.getAllAsync<{ name: string }>(
-      "PRAGMA table_info(notes);"
+      "PRAGMA table_info(notes);",
     );
-    const columnNames = tableInfo.map(col => col.name);
-    
-    if (!columnNames.includes('isArchived')) {
+    const columnNames = tableInfo.map((col) => col.name);
+
+    if (!columnNames.includes("isArchived")) {
       await db.execAsync(`
         ALTER TABLE notes ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0;
       `);

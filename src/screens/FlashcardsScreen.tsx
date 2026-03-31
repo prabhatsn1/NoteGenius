@@ -3,7 +3,7 @@
  * Browse decks per note + All Cards.
  * Study session with SRS feedback (Again/Hard/Good/Easy).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -11,19 +11,31 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { FlashcardCard } from '../components/FlashcardCard';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../constants/theme';
-import { useFlashcardsStore } from '../store/useFlashcardsStore';
-import { useNotesStore } from '../store/useNotesStore';
-import type { Flashcard, SRSRating } from '../types/models';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { FlashcardCard } from "../components/FlashcardCard";
+import {
+  useThemeColors,
+  Spacing,
+  FontSize,
+  BorderRadius,
+} from "../constants/theme";
+import { useFlashcardsStore } from "../store/useFlashcardsStore";
+import { useNotesStore } from "../store/useNotesStore";
+import type { Flashcard, SRSRating } from "../types/models";
 
 export default function FlashcardsScreen() {
   const colors = useThemeColors();
   const {
-    cards, dueCount, studySession,
-    loadCards, startStudy, revealAnswer, rateCard, endStudy, refreshDueCount,
+    cards,
+    dueCount,
+    studySession,
+    loadCards,
+    startStudy,
+    revealAnswer,
+    rateCard,
+    endStudy,
+    refreshDueCount,
   } = useFlashcardsStore();
   const { notes, loadNotes } = useNotesStore();
 
@@ -43,21 +55,28 @@ export default function FlashcardsScreen() {
 
     const progress = `${studySession.currentIndex + 1}/${studySession.cards.length}`;
 
-    const ratingButtons: { label: string; rating: SRSRating; color: string }[] = [
-      { label: 'Again', rating: 0, color: colors.difficultyAgain },
-      { label: 'Hard', rating: 2, color: colors.difficultyHard },
-      { label: 'Good', rating: 4, color: colors.difficultyGood },
-      { label: 'Easy', rating: 5, color: colors.difficultyEasy },
-    ];
+    const ratingButtons: { label: string; rating: SRSRating; color: string }[] =
+      [
+        { label: "Again", rating: 0, color: colors.difficultyAgain },
+        { label: "Hard", rating: 2, color: colors.difficultyHard },
+        { label: "Good", rating: 4, color: colors.difficultyGood },
+        { label: "Easy", rating: 5, color: colors.difficultyEasy },
+      ];
 
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
         {/* Study header */}
         <View style={styles.studyHeader}>
           <TouchableOpacity onPress={endStudy}>
-            <Text style={[styles.closeStudy, { color: colors.primary }]}>✕ End</Text>
+            <Text style={[styles.closeStudy, { color: colors.primary }]}>
+              ✕ End
+            </Text>
           </TouchableOpacity>
-          <Text style={[styles.progress, { color: colors.textSecondary }]}>{progress}</Text>
+          <Text style={[styles.progress, { color: colors.textSecondary }]}>
+            {progress}
+          </Text>
         </View>
 
         {/* Card */}
@@ -103,7 +122,9 @@ export default function FlashcardsScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <Text style={[styles.title, { color: colors.text }]}>Flashcards</Text>
 
       {/* Due count banner */}
@@ -114,7 +135,7 @@ export default function FlashcardsScreen() {
           accessibilityLabel={`Study ${dueCount} due cards`}
         >
           <Text style={styles.dueText}>
-            📚 {dueCount} card{dueCount > 1 ? 's' : ''} due for review
+            📚 {dueCount} card{dueCount > 1 ? "s" : ""} due for review
           </Text>
           <Text style={styles.dueAction}>Study Now →</Text>
         </TouchableOpacity>
@@ -122,14 +143,19 @@ export default function FlashcardsScreen() {
 
       {/* All cards button */}
       <TouchableOpacity
-        style={[styles.deckCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        style={[
+          styles.deckCard,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
         onPress={() => startStudy()}
         accessibilityLabel={`All cards deck with ${cards.length} cards`}
       >
         <View style={styles.deckInfo}>
-          <Text style={[styles.deckTitle, { color: colors.text }]}>🃏 All Cards</Text>
+          <Text style={[styles.deckTitle, { color: colors.text }]}>
+            🃏 All Cards
+          </Text>
           <Text style={[styles.deckCount, { color: colors.textSecondary }]}>
-            {cards.length} card{cards.length !== 1 ? 's' : ''}
+            {cards.length} card{cards.length !== 1 ? "s" : ""}
           </Text>
         </View>
       </TouchableOpacity>
@@ -142,16 +168,24 @@ export default function FlashcardsScreen() {
           const count = noteCardCounts.get(item.id) ?? 0;
           return (
             <TouchableOpacity
-              style={[styles.deckCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+              style={[
+                styles.deckCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
               onPress={() => startStudy(item.id)}
               accessibilityLabel={`${item.title} deck with ${count} cards`}
             >
               <View style={styles.deckInfo}>
-                <Text style={[styles.deckTitle, { color: colors.text }]} numberOfLines={1}>
+                <Text
+                  style={[styles.deckTitle, { color: colors.text }]}
+                  numberOfLines={1}
+                >
                   📝 {item.title}
                 </Text>
-                <Text style={[styles.deckCount, { color: colors.textSecondary }]}>
-                  {count} card{count !== 1 ? 's' : ''}
+                <Text
+                  style={[styles.deckCount, { color: colors.textSecondary }]}
+                >
+                  {count} card{count !== 1 ? "s" : ""}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -163,7 +197,9 @@ export default function FlashcardsScreen() {
           cards.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>🃏</Text>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No flashcards yet</Text>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                No flashcards yet
+              </Text>
               <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
                 Record a note, generate a summary, then create flashcards
               </Text>
@@ -182,25 +218,25 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: FontSize.xxl,
-    fontWeight: '800',
+    fontWeight: "800",
     marginBottom: Spacing.md,
   },
   dueBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     marginBottom: Spacing.md,
   },
   dueText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: "#FFFFFF",
+    fontWeight: "600",
     fontSize: FontSize.md,
   },
   dueAction: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: "#FFFFFF",
+    fontWeight: "700",
     fontSize: FontSize.md,
   },
   deckCard: {
@@ -210,13 +246,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   deckInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   deckTitle: {
     fontSize: FontSize.body,
-    fontWeight: '600',
+    fontWeight: "600",
     flex: 1,
   },
   deckCount: {
@@ -227,25 +263,25 @@ const styles = StyleSheet.create({
   },
   // Study mode
   studyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: Spacing.lg,
   },
   closeStudy: {
     fontSize: FontSize.body,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   progress: {
     fontSize: FontSize.md,
   },
   cardContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   ratingRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.sm,
     paddingVertical: Spacing.lg,
   },
@@ -253,20 +289,20 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
-    alignItems: 'center',
+    alignItems: "center",
   },
   ratingButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: "#FFFFFF",
+    fontWeight: "700",
     fontSize: FontSize.md,
   },
   tapHint: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: FontSize.md,
     paddingVertical: Spacing.lg,
   },
   emptyContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingTop: 60,
   },
   emptyIcon: {
@@ -275,12 +311,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: FontSize.xl,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: Spacing.xs,
   },
   emptySubtitle: {
     fontSize: FontSize.md,
-    textAlign: 'center',
+    textAlign: "center",
     maxWidth: 260,
   },
 });
