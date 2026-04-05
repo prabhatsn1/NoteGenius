@@ -24,11 +24,13 @@ import {
   Spacing,
   useThemeColors,
 } from "../constants/theme";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { makeAiProvider } from "../services/ai";
 import { AudioRecorder } from "../services/audio/recorder";
 import {
   destroySTTProvider,
   getSTTProvider,
+  isSTTAvailable,
 } from "../services/stt/sttProvider";
 import { useNotesStore } from "../store/useNotesStore";
 import { useRecordingStore } from "../store/useRecordingStore";
@@ -185,6 +187,15 @@ export default function RecordScreen() {
       console.warn("[RecordScreen] *** onError CALLBACK FIRED ***");
       console.warn("[RecordScreen] STT Error:", err);
     };
+
+    if (Platform.OS === "android") {
+      stt.onAudioSaved = (uri, durationMs) => {
+        const { noteId: currentNoteId } = useRecordingStore.getState();
+        if (currentNoteId) {
+          updateNote({ id: currentNoteId, audioPath: uri, durationMs });
+        }
+      };
+    }
     console.log("[RecordScreen] onError callback set");
 
     console.log("[RecordScreen] Checking STT availability...");
@@ -230,17 +241,20 @@ export default function RecordScreen() {
     noteIdRef.current = note.id;
     setNoteId(note.id);
 
-    // Start STT FIRST so it can claim the audio session before expo-audio.
-    // On iOS, starting the recorder first causes the speech recognizer to
-    // receive an immediate END event (audio session conflict).
     lastCommittedTextRef.current = "";
+
     await startSTT();
 
-    // Start audio recording after STT has initialized.
-    const rec = await AudioRecorder.start();
-    if (!rec) {
-      Alert.alert("Error", "Failed to start recording.");
-      return;
+    // Android: SpeechRecognizer and expo-av AudioRecorder both claim exclusive
+    // mic access via AudioFocus. Running both causes immediate STT error 7.
+    // On Android we rely solely on STT for audio capture; no .m4a file is saved.
+    let rec: Awaited<ReturnType<typeof AudioRecorder.start>> | null = null;
+    if (Platform.OS !== "android") {
+      rec = await AudioRecorder.start();
+      if (!rec) {
+        Alert.alert("Error", "Failed to start recording.");
+        return;
+      }
     }
 
     // Start timer
@@ -252,15 +266,15 @@ export default function RecordScreen() {
       );
     }, TIMER_INTERVAL);
 
-    // Start waveform metering
-    meteringRef.current = setInterval(async () => {
-      const s = await AudioRecorder.getStatus();
-      if (s?.metering != null) {
-        // Normalize dB metering to 0..1 (metering is typically -160..0)
-        const norm = Math.max(0, Math.min(1, (s.metering + 60) / 60));
-        appendWaveform(norm);
-      }
-    }, 100);
+    if (Platform.OS !== "android") {
+      meteringRef.current = setInterval(async () => {
+        const s = await AudioRecorder.getStatus();
+        if (s?.metering != null) {
+          const norm = Math.max(0, Math.min(1, (s.metering + 60) / 60));
+          appendWaveform(norm);
+        }
+      }, 100);
+    }
 
     // Autosave draft segments
     autosaveRef.current = setInterval(() => {
@@ -280,11 +294,9 @@ export default function RecordScreen() {
 
   // ─── Pause Recording ──────────────────────────────────────────────────
   const handlePause = useCallback(async () => {
-    // Cancel the STT session – iOS kills the audio session during pause
-    // anyway, and a stale session will not produce results on resume.
-    const stt = getSTTProvider();
-    await stt.cancel();
-    await AudioRecorder.pause();
+    // Destroy the STT singleton so resume gets a fresh provider instance.
+    await destroySTTProvider();
+    if (Platform.OS !== "android") await AudioRecorder.pause();
     pauseStartRef.current = Date.now();
     if (timerRef.current) clearInterval(timerRef.current);
     if (meteringRef.current) clearInterval(meteringRef.current);
@@ -296,19 +308,21 @@ export default function RecordScreen() {
     pausedDurationRef.current += Date.now() - pauseStartRef.current;
     // Restart STT before resuming the recorder (same audio session ordering rule).
     await startSTT();
-    await AudioRecorder.resume();
+    if (Platform.OS !== "android") await AudioRecorder.resume();
     timerRef.current = setInterval(() => {
       setElapsedMs(
         Date.now() - startTimeRef.current - pausedDurationRef.current,
       );
     }, TIMER_INTERVAL);
-    meteringRef.current = setInterval(async () => {
-      const s = await AudioRecorder.getStatus();
-      if (s?.metering != null) {
-        const norm = Math.max(0, Math.min(1, (s.metering + 60) / 60));
-        appendWaveform(norm);
-      }
-    }, 100);
+    if (Platform.OS !== "android") {
+      meteringRef.current = setInterval(async () => {
+        const s = await AudioRecorder.getStatus();
+        if (s?.metering != null) {
+          const norm = Math.max(0, Math.min(1, (s.metering + 60) / 60));
+          appendWaveform(norm);
+        }
+      }, 100);
+    }
     setStatus("recording");
   }, [startSTT, setElapsedMs, appendWaveform, setStatus]);
 
@@ -322,7 +336,7 @@ export default function RecordScreen() {
     const stt = getSTTProvider();
     await stt.stop();
 
-    const result = await AudioRecorder.stop();
+    const result = Platform.OS !== "android" ? await AudioRecorder.stop() : null;
 
     // Wait for any final STT results to be committed to the store.
     // The native layer may emit END without RESULTS, causing _endSession to
@@ -441,6 +455,8 @@ export default function RecordScreen() {
   const isPaused = status === "paused";
   const isIdle = status === "idle";
   const isTranscribing = status === "transcribing";
+  const sttAvailable = isSTTAvailable();
+  const isOnline = useNetworkStatus();
 
   return (
     <SafeAreaView
@@ -448,7 +464,49 @@ export default function RecordScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Record</Text>
+        <View style={styles.titleRow}>
+          <Text style={[styles.title, { color: colors.text }]}>Record</Text>
+          <View
+            style={[
+              styles.sttBadge,
+              {
+                backgroundColor: sttAvailable
+                  ? colors.primary + "22"
+                  : colors.textMuted + "22",
+                borderColor: sttAvailable ? colors.primary : colors.textMuted,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.sttBadgeText,
+                { color: sttAvailable ? colors.primary : colors.textMuted },
+              ]}
+            >
+              {sttAvailable ? "🎙 Live" : "🎙 Off"}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.sttBadge,
+              {
+                backgroundColor: isOnline
+                  ? colors.success + "22"
+                  : colors.textMuted + "22",
+                borderColor: isOnline ? colors.success : colors.textMuted,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.sttBadgeText,
+                { color: isOnline ? colors.success : colors.textMuted },
+              ]}
+            >
+              {isOnline ? "● Online" : "● Offline"}
+            </Text>
+          </View>
+        </View>
         {/* Language Picker */}
         <TouchableOpacity
           style={[
@@ -684,9 +742,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: Spacing.md,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
   title: {
     fontSize: FontSize.xxl,
     fontWeight: "800",
+  },
+  sttBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  sttBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: "600",
   },
   langButton: {
     paddingHorizontal: Spacing.md,

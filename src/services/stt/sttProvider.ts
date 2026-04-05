@@ -15,6 +15,7 @@ import {
   startListening,
   stopListening,
 } from "react-native-speech-recognition-kit";
+import { PcmAudioCapture } from "../audio/recorder";
 // NOTE: setRecognitionLanguage / isRecognitionAvailable are declared in the JS
 // wrapper but NOT implemented in the native layer – calling them crashes.
 // The iOS recogniser always uses [NSLocale currentLocale]; locale is tracked
@@ -23,6 +24,11 @@ import {
 // Check if native module is available
 const { SpeechRecognition } = NativeModules;
 const isNativeModuleAvailable = SpeechRecognition != null;
+
+/** Returns whether live speech-to-text is available on this device/build. */
+export function isSTTAvailable(): boolean {
+  return isNativeModuleAvailable;
+}
 
 // ─── Provider Interface ──────────────────────────────────────────────────────
 export interface STTProvider {
@@ -44,6 +50,8 @@ export interface STTProvider {
   onError: ((error: string) => void) | null;
   /** Called after the recognition session ends (normally or via cancel). */
   onSessionEnd: (() => void) | null;
+  /** Android only: fired when the WAV file has been written after stop(). */
+  onAudioSaved: ((uri: string, durationMs: number) => void) | null;
   isAvailable(): Promise<boolean>;
 }
 
@@ -52,6 +60,7 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
   onResult: ((text: string, isFinal: boolean) => void) | null = null;
   onError: ((error: string) => void) | null = null;
   onSessionEnd: (() => void) | null = null;
+  onAudioSaved: ((uri: string, durationMs: number) => void) | null = null;
 
   private subscriptions: ReturnType<typeof addEventListener>[] = [];
   /** Set to true once stop() has been called so we know to end on next RESULTS. */
@@ -64,6 +73,8 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
   private lastPartialText: string = "";
   /** Locale saved so we can restart recognition after error 7. */
   private currentLocale: string = "en-US";
+  /** Prevents overlapping error-7 restart attempts. */
+  private isRestarting = false;
 
   async start(_locale: string): Promise<void> {
     console.log("=== [STT] START METHOD CALLED ===");
@@ -89,9 +100,11 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     this.currentLocale = _locale;
     this.isStopping = false;
     this.sessionEnded = false;
+    this.isRestarting = false;
     this.stopResolve = null;
     this.lastPartialText = "";
     this._removeListeners();
+    if (Platform.OS === "android") PcmAudioCapture.reset();
     console.log("[STT] Setting up event listeners");
 
     // Set up listeners BEFORE starting recognition to ensure we catch all events
@@ -115,9 +128,9 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
       this.subscriptions.length,
     );
 
-    // Final results → commit the utterance as a finished segment.
-    // Only end the session when stop() has been explicitly called; otherwise
-    // keep listening to capture subsequent utterances.
+    // Final results → only commit as final when stop() has been called.
+    // While still recording, treat RESULTS as a partial so the text stays
+    // in the live transcript and is not prematurely committed as a segment.
     console.log("[STT] Adding RESULTS listener");
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.RESULTS, (event) => {
@@ -130,11 +143,18 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
           this.isStopping,
         );
         if (text) {
-          this.lastPartialText = ""; // final result supersedes any partial
-          console.log("[STT] Calling onResult with final text:", text);
-          this.onResult?.(text, true);
-        }
-        if (this.isStopping) {
+          if (this.isStopping) {
+            this.lastPartialText = "";
+            console.log("[STT] Calling onResult with final text:", text);
+            this.onResult?.(text, true);
+            this._endSession();
+          } else {
+            // Keep accumulating as partial until stop() is called.
+            this.lastPartialText = text;
+            console.log("[STT] Calling onResult as partial (not stopping):", text);
+            this.onResult?.(text, false);
+          }
+        } else if (this.isStopping) {
           this._endSession();
         }
       }),
@@ -158,6 +178,16 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
       this.subscriptions.length,
     );
 
+    // AUDIO_BUFFER: accumulate raw PCM chunks on Android for WAV assembly.
+    if (Platform.OS === "android") {
+      this.subscriptions.push(
+        addEventListener(speechRecogntionEvents.AUDIO_BUFFER, (event: any) => {
+          const chunk: string | undefined = event?.buffer;
+          if (chunk) PcmAudioCapture.addChunk(chunk);
+        }),
+      );
+    }
+
     // Error → report and close the session.
     // Native emits { message: string, code?: number } for all error events.
     this.subscriptions.push(
@@ -169,20 +199,10 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
 
         console.log("[STT] ERROR event:", { code, rawMsg, event });
 
-        // Error 7: No speech match found – Android fires this after each
-        // recognition window. Stop first to release the recognizer, then
-        // restart after a short delay to avoid error 11 (RECOGNIZER_BUSY).
-        if (code === 7 || rawMsg.includes("No speech match")) {
-          if (!this.isStopping) {
-            console.log("[STT] Error 7 – restarting recognition window");
-            Promise.resolve(stopListening())
-              .catch(() => {})
-              .then(() => new Promise((r) => setTimeout(r, 300)))
-              .then(() => {
-                if (!this.isStopping)
-                  Promise.resolve(startListening()).catch(() => {});
-              });
-          }
+        // Error 7: silence timeout. Error 5: client/busy after END.
+        // Both mean the recognizer stopped on its own — restart it.
+        if (code === 7 || code === 5 || rawMsg.includes("No speech match") || rawMsg.includes("Client error")) {
+          this._restartListening();
           return;
         }
 
@@ -229,8 +249,8 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     );
 
     // END fires after RESULTS (or alone if no speech was detected).
-    // Only end the session if stop() has been explicitly called; otherwise
-    // iOS fires END after each utterance and we want to keep listening.
+    // On Android, END is always followed by either RESULTS or ERROR — let those
+    // handlers decide what to do. Only end the session if stop() was called.
     console.log("[STT] Adding END listener");
     this.subscriptions.push(
       addEventListener(speechRecogntionEvents.END, () => {
@@ -260,32 +280,35 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
 
       // Add a small delay to ensure listeners are fully registered
       // This is especially important on Android
-      const delay = Platform.OS === "android" ? 200 : 100;
+      const delay = Platform.OS === "android" ? 600 : 100;
       console.log(`[STT] Waiting ${delay}ms before starting recognition...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
 
       console.log("[STT] Delay complete, now calling startListening()...");
-      const result = await startListening();
-      console.log("[STT] ===== startListening() COMPLETED =====");
-      console.log("[STT] startListening() result:", result);
-      console.log("[STT] startListening() result type:", typeof result);
+      const { startListening: sl } = require("react-native-speech-recognition-kit");
 
-      // Verify recognition actually started
-      if (!result) {
-        console.warn("[STT] WARNING: startListening returned falsy result");
-        if (Platform.OS === "android") {
-          console.warn(
-            "[STT] Android: Make sure Google app or speech recognition service is installed",
-          );
-          console.warn(
-            "[STT] Android: Check if microphone permission is granted",
-          );
+      // On Android the native SpeechRecognizer may not be ready immediately
+      // after a destroy() call (e.g. after pause). Retry up to 3 times.
+      const maxAttempts = Platform.OS === "android" ? 3 : 1;
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (this.isStopping) return;
+        try {
+          if (attempt > 1) {
+            console.log(`[STT] Retry attempt ${attempt} after 500ms...`);
+            await new Promise((r) => setTimeout(r, 500));
+          }
+          await sl();
+          console.log("[STT] startListening() succeeded on attempt", attempt);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`[STT] startListening() attempt ${attempt} failed:`, err);
         }
-      } else {
-        console.log(
-          "[STT] SUCCESS: Recognition should now be active and listening",
-        );
       }
+
+      if (lastErr) throw lastErr;
     } catch (err) {
       console.error("[STT] ===== EXCEPTION IN startListening() =====");
       console.error("[STT] Exception type:", err?.constructor?.name);
@@ -313,6 +336,12 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
       this.lastPartialText,
     );
 
+    if (Platform.OS === "android" && PcmAudioCapture.hasData()) {
+      PcmAudioCapture.save()
+        .then((result) => { if (result) this.onAudioSaved?.(result.uri, result.durationMs); })
+        .catch(() => {});
+    }
+
     return new Promise<void>((resolve) => {
       this.stopResolve = resolve;
       // Safety timeout: if END/RESULTS never fires (e.g. audio session conflict),
@@ -329,7 +358,8 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
       try {
         if (isNativeModuleAvailable) {
           console.log("[STT] Calling stopListening()");
-          Promise.resolve(stopListening()).catch(() => this._endSession());
+          const { stopListening: sl } = require("react-native-speech-recognition-kit");
+          Promise.resolve(sl()).catch(() => this._endSession());
         } else {
           this._endSession();
         }
@@ -400,6 +430,19 @@ class SpeechRecognitionKitSTTProvider implements STTProvider {
     this.stopResolve = null;
   }
 
+  private _restartListening(): void {
+    if (this.isStopping || this.isRestarting) return;
+    this.isRestarting = true;
+    const { startListening: sl } = require("react-native-speech-recognition-kit");
+    // 300ms gives the native recognizer enough time to fully release.
+    setTimeout(() => {
+      if (this.isStopping) { this.isRestarting = false; return; }
+      Promise.resolve(sl())
+        .then(() => { this.isRestarting = false; })
+        .catch(() => { this.isRestarting = false; });
+    }, 300);
+  }
+
   private _removeListeners(): void {
     for (const sub of this.subscriptions) {
       sub?.remove?.();
@@ -413,6 +456,7 @@ class OfflineSTTProvider implements STTProvider {
   onResult: ((text: string, isFinal: boolean) => void) | null = null;
   onError: ((error: string) => void) | null = null;
   onSessionEnd: (() => void) | null = null;
+  onAudioSaved: ((uri: string, durationMs: number) => void) | null = null;
 
   async start(_locale: string): Promise<void> {
     this.onError?.("Offline STT not yet implemented.");
