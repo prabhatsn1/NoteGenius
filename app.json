@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "NoteGenius",
-    "slug": "note-genius",
+    "slug": "notegenius",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -41,7 +41,7 @@
       "expo-router",
       "./plugins/withAndroidManifestFix",
       "./plugins/withExcludeSupportLibs",
-      "./plugins/withSpeechRecognition",
+      "./plugins/withVoice",
       [
         "expo-splash-screen",
         {

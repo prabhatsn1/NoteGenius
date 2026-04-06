@@ -32,7 +32,7 @@ Record voice notes, get automatic transcription, generate meeting-style summarie
 - **expo-sqlite** – structured offline storage (WAL mode)
 - **react-native-mmkv** – key-value settings storage
 - **expo-audio** – audio recording & playback
-- **@react-native-voice/voice** – speech-to-text
+- **@react-native-voice/voice** – on-device speech-to-text
 - **expo-notifications** – flashcard review reminders
 - **Custom NLP pipeline** – TextRank, lexicon sentiment, rule-based extraction
 - **TypeScript strict mode**
